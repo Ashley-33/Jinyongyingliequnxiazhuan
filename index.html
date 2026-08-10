@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>金庸群侠传 · 网页复刻</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+
+    <!-- 标题 -->
+    <section id="screen-title" class="screen active">
+      <div class="title-deco">◆ ◇ ◆</div>
+      <h1 class="title-main">金庸群侠传</h1>
+      <div class="title-sub">网 页 复 刻 版 · 像 素 战 棋</div>
+      <div class="title-btns">
+        <button id="btn-new" class="btn gold">新 的 江 湖</button>
+        <button id="btn-continue" class="btn">继 续 游 戏</button>
+        <button id="btn-arena" class="btn">演 武 切 磋</button>
+      </div>
+      <div id="data-brief">正在载入原版数据…</div>
+      <div id="boot" style="color:#ff7a7a;font-size:12px"></div>
+    </section>
+
+    <!-- 江湖世界探索 -->
+    <section id="screen-world" class="screen">
+      <div id="world-bar" class="pixel-box">江湖</div>
+      <div class="world-stage">
+        <div id="world-party" class="party-panel"></div>
+        <canvas id="world-canvas"></canvas>
+      </div>
+      <div id="world-hint"></div>
+      <div class="world-foot">
+        <button id="btn-world-title" class="btn sm">存档退出</button>
+      </div>
+      <div id="dialog"></div>
+      <div id="world-toast"></div>
+    </section>
+
+    <!-- 选将出战（演武切磋） -->
+    <section id="screen-select" class="screen">
+      <div class="sel-head">
+        <h2>点 将 出 战</h2>
+        <button id="btn-back-title" class="btn sm">← 返回</button>
+      </div>
+      <div class="sel-cols">
+        <div class="sel-panel pixel-box">
+          <h3>我方队伍（主角 + 最多2名将）</h3>
+          <div id="my-team" class="team-row"></div>
+          <h3 style="margin-top:12px">敌方阵容
+            <button id="btn-roll-enemy" class="btn sm" style="float:right">换一批</button>
+          </h3>
+          <div id="enemy-team" class="team-row enemy-row"></div>
+        </div>
+        <div class="sel-panel pixel-box">
+          <h3>江湖名将（点击入队）</h3>
+          <div id="hero-pool" class="pool-grid"></div>
+        </div>
+      </div>
+      <div class="sel-foot">
+        <button id="btn-fight" class="btn gold">出 战 →</button>
+      </div>
+    </section>
+
+    <!-- 战斗 -->
+    <section id="screen-battle" class="screen">
+      <div class="battle-stage">
+        <canvas id="battle-canvas"></canvas>
+        <div id="battle-party" class="party-panel"></div>
+      </div>
+      <div id="battle-info">—</div>
+      <div class="battle-bottom">
+        <div id="act-menu">
+          <button id="act-move" class="btn sm">移动</button>
+          <button id="act-attack" class="btn sm gold">出招</button>
+          <button id="act-wait" class="btn sm">待命</button>
+          <button id="act-auto" class="btn sm">自动</button>
+        </div>
+        <div id="battle-log"></div>
+      </div>
+      <div id="magic-list"></div>
+    </section>
+
+    <!-- 结果 -->
+    <section id="screen-result" class="screen">
+      <h1 id="result-title" class="win">★ 战 斗 胜 利 ★</h1>
+      <p id="result-desc"></p>
+      <div class="result-btns">
+        <button id="btn-again" class="btn gold">再 战 一 场</button>
+        <button id="btn-to-title" class="btn">回 标 题</button>
+      </div>
+    </section>
+
+    <div class="footer">数据来源：原版《金庸群侠传》· 自制像素引擎 · 仅供个人游玩</div>
+  </div>
+
+  <!-- 数据 + 引擎（普通 script，支持 file:// 双击直接玩） -->
+  <script src="js/gamedata.js"></script>
+  <script src="js/fightmeta.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/assets.js"></script>
+  <script src="js/pixel.js"></script>
+  <script src="js/party.js"></script>
+  <script src="js/state.js"></script>
+  <script src="js/battle.js"></script>
+  <script src="js/world.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>
