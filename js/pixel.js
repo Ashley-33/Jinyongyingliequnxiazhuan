@@ -14,6 +14,17 @@
 
   function px(v) { return Math.round(v); }
 
+  // —— 等距战场 ——
+  const IHW = 18, IHH = 9;                 // 菱形半宽/半高
+  const GRASS_TILES = [6, 8, 35, 36];      // 原版草地地块编号
+  function isoBP(gx, gy, cam) { return { sx: cam.x + (gx - gy) * IHW, sy: cam.y + (gx + gy) * IHH }; }
+  function isoDiamond(ctx, sx, sy, fill) {
+    ctx.fillStyle = fill; ctx.beginPath();
+    ctx.moveTo(sx + IHW, sy); ctx.lineTo(sx + 2 * IHW, sy + IHH);
+    ctx.lineTo(sx + IHW, sy + 2 * IHH); ctx.lineTo(sx, sy + IHH); ctx.closePath(); ctx.fill();
+  }
+  JY.isoBP = isoBP;
+
   // 简单可复现伪随机（按坐标），用于地形花纹稳定
   function hash(x, y) {
     let h = (x * 374761393 + y * 668265263) ^ 0x5bd1e995;
@@ -53,20 +64,21 @@
   // 高亮一批格子（移动/攻击范围）
   function drawTiles(ctx, cells, cam, color) {
     ctx.save();
-    ctx.fillStyle = color;
     cells.forEach((c) => {
-      const sx = px(c.x * TILE - cam.x), sy = px(c.y * TILE - cam.y);
-      ctx.fillRect(sx + 2, sy + 2, TILE - 4, TILE - 4);
+      const p = isoBP(c.x, c.y, cam);
+      isoDiamond(ctx, p.sx + 1, p.sy + 1, color);
     });
     ctx.restore();
   }
 
-  // 光标框
+  // 光标框（等距菱形描边）
   function drawCursor(ctx, x, y, cam, color) {
-    const sx = px(x * TILE - cam.x), sy = px(y * TILE - cam.y);
-    ctx.strokeStyle = color || '#ffe27a';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(sx + 2, sy + 2, TILE - 4, TILE - 4);
+    const p = isoBP(x, y, cam);
+    ctx.strokeStyle = color || '#ffe27a'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(p.sx + IHW, p.sy); ctx.lineTo(p.sx + 2 * IHW, p.sy + IHH);
+    ctx.lineTo(p.sx + IHW, p.sy + 2 * IHH); ctx.lineTo(p.sx, p.sy + IHH); ctx.closePath();
+    ctx.stroke();
   }
 
   // 由角色属性派生一个稳定的衣着色相
@@ -100,8 +112,8 @@
 
   // 画一个像素小人（居中于格），face: 'down'|'up'|'left'|'right'
   function drawUnit(ctx, unit, cam) {
-    const gx = unit.x * TILE - cam.x, gy = unit.y * TILE - cam.y;
-    const cx = px(gx + TILE / 2), top = px(gy + 4);
+    const _p = isoBP(unit.x, unit.y, cam);
+    const cx = px(_p.sx + IHW), gy = _p.sy + 2 * IHH - TILE, gx = cx - TILE / 2, top = px(gy + 4);
 
     // 最优先：原版全身战斗精灵（含站立/出招动作）
     const A = window.JY.assets;
@@ -211,8 +223,9 @@
       x: gx, y: gy, life: 0, max: 900,
       draw(ctx, cam) {
         const t = this.life / this.max;
-        const sx = px(this.x * TILE + TILE / 2 - cam.x);
-        const sy = px(this.y * TILE - cam.y - t * 26);
+        const p = isoBP(this.x, this.y, cam);
+        const sx = px(p.sx + IHW);
+        const sy = px(p.sy + IHH - t * 26);
         ctx.save();
         ctx.globalAlpha = 1 - t;
         ctx.font = 'bold 20px "Courier New",monospace';

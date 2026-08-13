@@ -192,8 +192,10 @@
   // ============ 玩家操作 ============
   function onCanvasClick(evt) {
     const rect = B.canvas.getBoundingClientRect();
-    const x = Math.floor((evt.clientX - rect.left) * (B.canvas.width / rect.width) / TILE);
-    const y = Math.floor((evt.clientY - rect.top) * (B.canvas.height / rect.height) / TILE);
+    const mx = (evt.clientX - rect.left) * (B.canvas.width / rect.width) - B.isoOX - 18;
+    const my = (evt.clientY - rect.top) * (B.canvas.height / rect.height) - B.isoOY - 9;
+    const a = mx / 18, b = my / 9;
+    const x = Math.round((a + b) / 2), y = Math.round((b - a) / 2);
     if (x < 0 || y < 0 || x >= B.map.w || y >= B.map.h) return;
 
     if (B.phase === 'move') {
@@ -389,7 +391,7 @@
   function loop(ts) {
     if (!B) return;
     const dt = B.lastTs ? ts - B.lastTs : 16; B.lastTs = ts;
-    const ctx = B.ctx, cam = { x: 0, y: 0 };
+    const ctx = B.ctx, cam = { x: B.isoOX, y: B.isoOY };
     ctx.clearRect(0, 0, B.canvas.width, B.canvas.height);
     P.drawField(ctx, B.map, cam);
 
@@ -401,7 +403,7 @@
 
     // 单位（存活在上）
     B.units.filter((u) => u.dead).forEach((u) => P.drawUnit(ctx, u, cam));
-    B.units.filter((u) => !u.dead).forEach((u) => P.drawUnit(ctx, u, cam));
+    B.units.filter((u) => !u.dead).slice().sort((a, b) => (a.x + a.y) - (b.x + b.y)).forEach((u) => P.drawUnit(ctx, u, cam));
 
     // 当前行动者光标
     if (B.active && !B.active.dead && (B.phase === 'select' || B.phase === 'move' || B.phase === 'aim'))
@@ -420,7 +422,7 @@
     const w = 12, h = 9;
     const map = makeMap(w, h);
     const canvas = $('battle-canvas');
-    canvas.width = w * TILE; canvas.height = h * TILE;
+    canvas.width = (w + h) * 18 + 40; canvas.height = (w + h) * 9 + 130;
 
     B = {
       map, canvas, ctx: canvas.getContext('2d'),
@@ -428,6 +430,7 @@
       active: null, phase: 'init', selectedMagic: null,
       rangeCells: null, aimCellsCache: null, floats: [], raf: 0, lastTs: 0,
       onEnd: opts.onEnd, expEach: opts.expEach || 0, animTimer: 0, auto: false,
+      isoOX: h * 18 + 20, isoOY: 66,
     };
     B.ctx.imageSmoothingEnabled = false;
 
