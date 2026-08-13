@@ -5,7 +5,20 @@
   const JY = global.JY || (global.JY = {});
   const D = JY.data, S = JY.state;
   const $ = (id) => document.getElementById(id);
-  const T = 38; // 探索格像素
+  const T = 38; // 探索格像素（逻辑格，用于移动/碰撞）
+  // —— 等距渲染 ——
+  const HW = 18, HH = 9;                  // 菱形地块半宽/半高
+  let isoOX = 0, isoOY = 40;              // 等距原点偏移（start时按场景算）
+  function isoPos(gx, gy) { return { sx: Math.round(isoOX + (gx - gy) * HW), sy: Math.round(isoOY + (gx + gy) * HH) }; }
+  function isoInv(mx, my) {                // 屏幕→格（逆投影）
+    const a = (mx - isoOX) / HW, b = (my - isoOY - HH) / HH;
+    return { gx: Math.floor((a + b) / 2), gy: Math.floor((b - a) / 2) };
+  }
+  const GRASS = [6, 8, 35, 36], ROAD = [24, 27];
+  function groundTile(ch, x, y) {
+    if (ch === '=') return ROAD[(x + y) % 2];
+    return GRASS[(x * 3 + y * 5) % 4];
+  }
 
   // —— 场景配置（tile: '.'草 '='路 '#'房墙 'T'树 '~'水；实体单列坐标）——
   const SCENES = {
@@ -149,23 +162,75 @@
       ctx.fillStyle = labelColor || '#e8dcc0'; ctx.fillText(label, cx, top - 3);
     }
   }
+  function drawDiamond(sx, sy, fill) {
+    ctx.fillStyle = fill; ctx.beginPath();
+    ctx.moveTo(sx + HW, sy); ctx.lineTo(sx + 2 * HW, sy + HH);
+    ctx.lineTo(sx + HW, sy + 2 * HH); ctx.lineTo(sx, sy + HH); ctx.closePath(); ctx.fill();
+  }
+  function drawIsoBuilding(cx, fy) {
+    ctx.fillStyle = '#4a3728'; ctx.fillRect(cx - 15, fy - 30, 30, 28);
+    ctx.fillStyle = '#7a5638'; ctx.beginPath(); ctx.moveTo(cx - 18, fy - 28); ctx.lineTo(cx, fy - 42); ctx.lineTo(cx + 18, fy - 28); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#241812'; ctx.fillRect(cx - 5, fy - 15, 10, 13);
+  }
+  function drawIsoTree(cx, fy) {
+    ctx.fillStyle = '#5b4636'; ctx.fillRect(cx - 2, fy - 15, 4, 13);
+    ctx.fillStyle = '#1f3a1e'; ctx.beginPath(); ctx.arc(cx, fy - 24, 13, 0, 7); ctx.fill();
+    ctx.fillStyle = '#2c4d28'; ctx.beginPath(); ctx.arc(cx - 4, fy - 28, 8, 0, 7); ctx.fill();
+  }
+  function drawPersonIso(cx, fy, hue, isHero, label, labelColor, headId) {
+    const A = window.JY.assets;
+    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(cx, fy - 2, 12, 5, 0, 0, 7); ctx.fill();
+    const fs = (headId != null && headId >= 0 && A) ? A.fightSheet(headId) : null;
+    const fm = (headId != null && headId >= 0 && A) ? A.fightMeta(headId) : null;
+    if (fs && fm && fm[0]) {
+      const m = fm[0], s = 0.62;
+      ctx.drawImage(fs, m[0], 0, m[1], m[2], Math.round(cx - m[3] * s), Math.round(fy - m[4] * s), Math.round(m[1] * s), Math.round(m[2] * s));
+    } else {
+      const hd = (headId != null && headId >= 0 && A) ? A.head(headId) : null;
+      if (hd) { ctx.drawImage(hd, cx - 13, fy - 30, 26, 27); }
+      else { ctx.fillStyle = `hsl(${hue},55%,50%)`; ctx.fillRect(cx - 7, fy - 26, 14, 22); ctx.fillStyle = '#f2c79a'; ctx.fillRect(cx - 5, fy - 34, 10, 10); }
+    }
+    if (isHero) { ctx.fillStyle = '#ffe27a'; ctx.fillRect(cx - 8, fy - 40, 16, 2); }
+    if (label) {
+      ctx.font = '11px "Courier New",monospace'; ctx.textAlign = 'center';
+      ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.strokeText(label, cx, fy - 42);
+      ctx.fillStyle = labelColor || '#e8dcc0'; ctx.fillText(label, cx, fy - 42);
+    }
+  }
   function draw() {
     if (!active) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    for (let y = 0; y < cur.map.length; y++)
-      for (let x = 0; x < cur.map[0].length; x++) drawTile(x, y, tileAt(x, y));
-    // 出口
+    const H = cur.map.length, W = cur.map[0].length, A = window.JY.assets;
+    // 1) 地面层（原版菱形地块）
+    for (let gy = 0; gy < H; gy++) for (let gx = 0; gx < W; gx++) {
+      const ch = tileAt(gx, gy); const p = isoPos(gx, gy);
+      if (!(A && A.drawGround(ctx, groundTile(ch, gx, gy), p.sx, p.sy)))
+        drawDiamond(p.sx, p.sy, ch === '=' ? '#6b5836' : '#33532f');
+    }
+    // 2) 出口高亮
     cur.exits.forEach((e) => {
-      ctx.fillStyle = 'rgba(255,226,122,0.25)'; ctx.fillRect(e.x * T + 2, e.y * T + 2, T - 4, T - 4);
+      const p = isoPos(e.x, e.y); drawDiamond(p.sx, p.sy, 'rgba(255,226,122,0.30)');
       ctx.font = '10px "Courier New"'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffe27a';
-      ctx.fillText(e.label, e.x * T + T / 2, e.y * T + T / 2 + 3);
+      ctx.fillText(e.label, p.sx + HW, p.sy + HH + 3);
     });
-    // NPC
-    cur.npcs.forEach((n) => { if (n.type === 'recruit' && S.state.flags['recruited_' + n.roleName]) return; drawPerson(n.x * T, n.y * T, n.color, 'down', false, n.name, n.type === 'inn' ? '#7ee0e0' : (n.type === 'recruit' ? '#7ee07e' : '#e8dcc0'), npcHead(n)); });
-    // 遭遇（未清除）
-    cur.encounters.forEach((e) => { if (S.state.cleared[S.state.sceneId + ':' + e.id]) return; drawPerson(e.x * T, e.y * T, 0, 'down', false, e.boss ? '★' + e.name : e.name, '#ff7a7a', encHead(e)); });
-    // 主角
-    drawPerson(hero.x * T, hero.y * T, 210, hero.face, true, S.state.team[0] ? S.state.team[0].name : '主角', '#ffe27a', S.state.team[0] ? S.state.team[0].head : 0);
+    // 3) 物件+人物层，按深度(gx+gy)排序绘制（正确遮挡）
+    const objs = [];
+    for (let gy = 0; gy < H; gy++) for (let gx = 0; gx < W; gx++) {
+      const ch = tileAt(gx, gy);
+      if (ch === '#' || ch === 'T') objs.push({ x: gx, y: gy, k: ch });
+    }
+    cur.npcs.forEach((n) => { if (n.type === 'recruit' && S.state.flags['recruited_' + n.roleName]) return; objs.push({ x: n.x, y: n.y, k: 'npc', n }); });
+    cur.encounters.forEach((e) => { if (S.state.cleared[S.state.sceneId + ':' + e.id]) return; objs.push({ x: e.x, y: e.y, k: 'enc', e }); });
+    objs.push({ x: hero.x, y: hero.y, k: 'hero' });
+    objs.sort((a, b) => (a.x + a.y) - (b.x + b.y));
+    objs.forEach((o) => {
+      const p = isoPos(o.x, o.y), cx = p.sx + HW, fy = p.sy + 2 * HH;
+      if (o.k === '#') drawIsoBuilding(cx, fy);
+      else if (o.k === 'T') drawIsoTree(cx, fy);
+      else if (o.k === 'npc') drawPersonIso(cx, fy, o.n.color, false, o.n.name, o.n.type === 'inn' ? '#7ee0e0' : (o.n.type === 'recruit' ? '#7ee07e' : '#e8dcc0'), npcHead(o.n));
+      else if (o.k === 'enc') drawPersonIso(cx, fy, 0, false, o.e.boss ? '★' + o.e.name : o.e.name, '#ff7a7a', encHead(o.e));
+      else drawPersonIso(cx, fy, 210, true, S.state.team[0] ? S.state.team[0].name : '主角', '#ffe27a', S.state.team[0] ? S.state.team[0].head : 0);
+    });
     raf = requestAnimationFrame(draw);
   }
 
@@ -272,8 +337,9 @@
   function onClick(evt) {
     if (!active || busy) return;
     const rect = canvas.getBoundingClientRect();
-    const gx = Math.floor((evt.clientX - rect.left) * (canvas.width / rect.width) / T);
-    const gy = Math.floor((evt.clientY - rect.top) * (canvas.height / rect.height) / T);
+    const mx = (evt.clientX - rect.left) * (canvas.width / rect.width);
+    const my = (evt.clientY - rect.top) * (canvas.height / rect.height);
+    const g = isoInv(mx, my); const gx = g.gx, gy = g.gy;
     const dx = gx - hero.x, dy = gy - hero.y;
     if (Math.abs(dx) + Math.abs(dy) === 1) tryMove(dx, dy);
   }
@@ -288,13 +354,13 @@
   function start() {
     canvas = $('world-canvas');
     cur = scene();
-    canvas.width = cur.map[0].length * T; canvas.height = cur.map.length * T;
+    { const _W = cur.map[0].length, _H = cur.map.length; canvas.width = (_W + _H) * HW + 8; canvas.height = (_W + _H) * HH + 96; isoOX = _H * HW + 4; isoOY = 48; }
     ctx = canvas.getContext('2d'); ctx.imageSmoothingEnabled = false;
     hero.x = S.state.x != null ? S.state.x : 4; hero.y = S.state.y != null ? S.state.y : 8;
     // 用存档位置
     if (S.state.sceneId in SCENES) cur = SCENES[S.state.sceneId];
     hero.x = S.state.x; hero.y = S.state.y;
-    canvas.width = cur.map[0].length * T; canvas.height = cur.map.length * T;
+    { const _W = cur.map[0].length, _H = cur.map.length; canvas.width = (_W + _H) * HW + 8; canvas.height = (_W + _H) * HH + 96; isoOX = _H * HW + 4; isoOY = 48; }
     active = true; busy = false;
     document.addEventListener('keydown', onKey);
     canvas.addEventListener('click', onClick);
