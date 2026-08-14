@@ -83,7 +83,7 @@
         });
         return;
       case 'teleport':
-        io.teleport(step.to, step.x, step.y); cont(); return;
+        io.teleport(step.to, step.x, step.y); return;   // 切场景后脚本终止（busy 由 enter 复位）
       case 'if': {
         const branch = cond(step) ? step.then : step.else;
         if (branch && branch.length) run(branch, io, cont); else cont();

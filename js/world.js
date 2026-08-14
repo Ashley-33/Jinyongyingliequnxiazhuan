@@ -70,9 +70,52 @@
               { do: 'recruit', role: '袁承志' },
             ] },
         ] },
+        { x: 25, y: 34, name: '驿卒', color: 60, script: [
+          { do: 'say', who: '驿卒', lines: ['壮士要出远门？', '我这就送你到衡阳城。'] },
+          { do: 'teleport', to: 30, x: 26, y: 26 },
+        ] },
       ],
       encounters: [],
       exits: [{ x: 25, y: 61, to: 1, tx: 7, ty: 1, label: '村口↓' }],
+    },
+    30: {
+      name: '衡阳城', real: true, img: 'assets/scene/30.png',
+      spawn: { x: 26, y: 26 },
+      onEnter: [{ do: 'say', who: '', lines: ['【衡阳城】', '街市喧闹，武林中人往来其间。'] }],
+      npcs: [
+        { x: 28, y: 26, name: '城门吏', color: 60, script: [
+          { do: 'say', who: '城门吏', lines: ['出城可回无量山下的小村。'] },
+          { do: 'teleport', to: 0, x: 25, y: 36 } ] },
+        { x: 25, y: 25, name: '指路人', color: 200, script: [
+          { do: 'say', who: '指路人', lines: ['沿官道往西，可上华山。'] },
+          { do: 'teleport', to: 37, x: 29, y: 28 } ] },
+        { x: 26, y: 28, name: '镖头', color: 140, script: [
+          { do: 'say', who: '镖头', lines: ['我正要往武当山送镖，捎你一程。'] },
+          { do: 'teleport', to: 54, x: 29, y: 28 } ] },
+      ],
+      encounters: [], exits: [],
+    },
+    37: {
+      name: '华山派', real: true, img: 'assets/scene/37.png',
+      spawn: { x: 29, y: 28 },
+      onEnter: [{ do: 'say', who: '', lines: ['【华山派】', '剑气纵横，气象森然。'] }],
+      npcs: [
+        { x: 29, y: 26, name: '华山弟子', color: 100, script: [
+          { do: 'say', who: '华山弟子', lines: ['师门重地，请勿喧哗。', '下山可回衡阳城。'] },
+          { do: 'teleport', to: 30, x: 26, y: 26 } ] },
+      ],
+      encounters: [], exits: [],
+    },
+    54: {
+      name: '武当派', real: true, img: 'assets/scene/54.png',
+      spawn: { x: 29, y: 28 },
+      onEnter: [{ do: 'say', who: '', lines: ['【武当派】', '道家清静，紫气东来。'] }],
+      npcs: [
+        { x: 29, y: 26, name: '武当道人', color: 320, script: [
+          { do: 'say', who: '武当道人', lines: ['无量寿福。', '下山可回衡阳城。'] },
+          { do: 'teleport', to: 30, x: 26, y: 26 } ] },
+      ],
+      encounters: [], exits: [],
     },
     1: {
       name: '村口野径', w: 15, h: 12,
@@ -526,7 +569,7 @@
   const HINT = '方向键/WASD 或点击地面自动寻路，撞向人物对话、撞向敌人开战';
 
   function enter(sceneId, x, y) {
-    walkDirs = [];
+    walkDirs = []; busy = false;                        // 切场景：清行走队列，复位忙（脚本 teleport 后交给 onEnter 接管）
     S.state.sceneId = sceneId; hero.x = x; hero.y = y;
     setCur();
     if (cur.real && !walkableReal(hero.x, hero.y) && cur.spawn) { hero.x = cur.spawn.x; hero.y = cur.spawn.y; }
