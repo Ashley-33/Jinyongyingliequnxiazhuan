@@ -92,6 +92,20 @@
         { x: 26, y: 28, name: '镖头', color: 140, script: [
           { do: 'say', who: '镖头', lines: ['我正要往武当山送镖，捎你一程。'] },
           { do: 'teleport', to: 54, x: 29, y: 28 } ] },
+        { x: 27, y: 24, name: '香客', color: 260, script: [
+          { do: 'say', who: '香客', lines: ['随我往大理天龙寺上香罢。'] },
+          { do: 'teleport', to: 8, x: 30, y: 43 } ] },
+      ],
+      encounters: [], exits: [],
+    },
+    8: {
+      name: '天龙寺', real: true, img: 'assets/scene/8.png',
+      spawn: { x: 30, y: 43 },
+      onEnter: [{ do: 'say', who: '', lines: ['【大理 · 天龙寺】', '梵音阵阵，池水澄澈。'] }],
+      npcs: [
+        { x: 28, y: 43, name: '扫地僧', color: 260, script: [
+          { do: 'say', who: '扫地僧', lines: ['施主远来辛苦。', '出寺可回衡阳城。'] },
+          { do: 'teleport', to: 30, x: 26, y: 26 } ] },
       ],
       encounters: [], exits: [],
     },
@@ -190,6 +204,22 @@
   function rProj(gx, gy) { const px = curSD.ox + (gx - gy) * HW, py = curSD.oy + (gx + gy) * HH; return { cx: px + HW, fy: py + 2 * HH }; }
   function rInv(sx, sy) { const a = (sx - curSD.ox - HW) / HW, b = (sy - curSD.oy - HH) / HH; return { gx: Math.round((a + b) / 2), gy: Math.round((b - a) / 2) }; }
   function walkableReal(x, y) { const n = curSD.size; if (x < 0 || y < 0 || x >= n || y >= n) return false; const idx = y * n + x; return !blkSet.has(idx) && !outSet.has(idx); }
+  // 入口常落在门/码头(建筑/水)格上 → BFS 就近挪到可走格，保证进场景后能动
+  function nearestWalkable(x, y) {
+    const n = curSD.size;
+    if (walkableReal(x, y)) return { x, y };
+    const seen = new Set([y * n + x]); const q = [[x, y]];
+    for (let h = 0; h < q.length && h < n * n; h++) {
+      const [cx, cy] = q[h];
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = cx + dx, ny = cy + dy, k = ny * n + nx;
+        if (nx < 0 || ny < 0 || nx >= n || ny >= n || seen.has(k)) continue;
+        if (walkableReal(nx, ny)) return { x: nx, y: ny };
+        seen.add(k); q.push([nx, ny]);
+      }
+    }
+    return { x, y };
+  }
   function updateCam() {
     if (!curSD) return; const f = rProj(hero.x, hero.y);
     camX = (curSD.iw <= VIEW_W) ? Math.round((curSD.iw - VIEW_W) / 2) : Math.max(0, Math.min(Math.round(f.cx - VIEW_W / 2), curSD.iw - VIEW_W));
@@ -572,7 +602,7 @@
     walkDirs = []; busy = false;                        // 切场景：清行走队列，复位忙（脚本 teleport 后交给 onEnter 接管）
     S.state.sceneId = sceneId; hero.x = x; hero.y = y;
     setCur();
-    if (cur.real && !walkableReal(hero.x, hero.y) && cur.spawn) { hero.x = cur.spawn.x; hero.y = cur.spawn.y; }
+    if (cur.real && !walkableReal(hero.x, hero.y)) { const p = nearestWalkable(hero.x, hero.y); hero.x = p.x; hero.y = p.y; }
     S.state.x = hero.x; S.state.y = hero.y; S.save();
     layout(); updateCam();
     hint(HINT); refreshBar();
@@ -586,7 +616,7 @@
     hero.x = S.state.x != null ? S.state.x : (cur.spawn ? cur.spawn.x : 4);
     hero.y = S.state.y != null ? S.state.y : (cur.spawn ? cur.spawn.y : 8);
     // 迁移/兜底：真场景若存档位置不可走（老存档或坐标失配），回出生点
-    if (cur.real && !walkableReal(hero.x, hero.y) && cur.spawn) { hero.x = cur.spawn.x; hero.y = cur.spawn.y; }
+    if (cur.real && !walkableReal(hero.x, hero.y)) { const p = nearestWalkable(hero.x, hero.y); hero.x = p.x; hero.y = p.y; }
     layout(); updateCam();
     active = true; busy = false; walkDirs = [];
     document.addEventListener('keydown', onKey);

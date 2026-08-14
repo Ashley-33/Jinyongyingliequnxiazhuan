@@ -22,6 +22,7 @@ build_scene.py —— 原版《金庸群侠传》场景构建管线（可复用�
   python3 tools/build_scene.py --write 13 22   # 生成 png 并把 JYScene 片段写进 js/scenedata.js
 """
 import struct, sys, json, os
+from collections import deque
 from PIL import Image
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -77,26 +78,47 @@ def layer(scene, l):
     base = (scene*6 + l) * N
     return [[S1[base + y*SZ + x] for x in range(SZ)] for y in range(SZ)]
 
+# 水地块判定（kys-cpp SubScene::isWater）：地面值/2 落在这些纹理号
+def is_water(earth_val):
+    n = earth_val // 2
+    return (179 <= n <= 181) or n == 261 or n == 511 or (662 <= n <= 665) or n == 674
+
 def render(scene):
-    """渲染场景 → (PIL大图, JYScene dict)"""
-    earth = layer(scene, 0); bld = layer(scene, 1)
+    """渲染场景 → (PIL大图, JYScene dict)。可走性遵循 kys-cpp：
+       挡 = 建筑(0<值<9999) 或 水；earth==0 本身不挡，但边界连通的空地记为图外(void)。
+       层：0地面 1建筑 2装饰，均参与深度排序绘制。"""
+    earth = layer(scene, 0); bld = layer(scene, 1); deco = layer(scene, 2)
     items = []                       # (depth, layerorder, sx, sy, tile) —— sx,sy=站点(未偏移)
-    blocked = []; outside = []
+    blocked = set()
     for y in range(SZ):
         for x in range(SZ):
-            e = earth[y][x]; b = bld[y][x]
-            idxc = y*SZ + x
-            if e == 0: outside.append(idxc)
-            if b != 0: blocked.append(idxc)
+            e = earth[y][x]; b = bld[y][x]; d = deco[y][x]
+            if (0 < b < 9999) or is_water(e):
+                blocked.add(y*SZ + x)
             sx = (x - y) * HW + FOOT     # 站点 x（未加 ox）
             sy = (x + y) * HH + FOOT     # 站点 y（未加 oy）
-            for val, lo in ((e, 0), (b, 1)):
+            for val, lo in ((e, 0), (b, 1), (d, 2)):
                 if val == 0: continue
                 t = tile(val)
                 if not t: continue
                 items.append((x + y, lo, sx, sy, t))
     if not items:
         return None, None
+    # 图外 void：从四边洪泛，穿过 earth==0 且非 blocked 的空地（内部门/庭院的空地仍可走）
+    void = set(); dq = deque()
+    def empty(x, y): return earth[y][x] == 0 and (y*SZ+x) not in blocked
+    for i in range(SZ):
+        for cx, cy in ((0, i), (SZ-1, i), (i, 0), (i, SZ-1)):
+            k = cy*SZ + cx
+            if empty(cx, cy) and k not in void:
+                void.add(k); dq.append((cx, cy))
+    while dq:
+        x, y = dq.popleft()
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            nx, ny = x+dx, y+dy
+            if 0 <= nx < SZ and 0 <= ny < SZ and (ny*SZ+nx) not in void and empty(nx, ny):
+                void.add(ny*SZ+nx); dq.append((nx, ny))
+    blocked = sorted(blocked); outside = sorted(void)
     # 画位置 = (sx - tile.ox, sy - tile.oy)；求整体最小以定 ox/oy（使画布从0开始）
     minx = min(sx - t[3] for _, _, sx, sy, t in items)
     miny = min(sy - t[4] for _, _, sx, sy, t in items)
