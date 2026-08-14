@@ -108,6 +108,8 @@
   let camX = 0, camY = 0;                            // 相机（真场景大图左上角像素）
   const hero = { x: 25, y: 36, face: 'down' };
   let busy = false; // 对话/切换/战斗中，暂停行走
+  let walkDirs = [], walkAcc = 0;                    // 点击自动寻路：待执行方向序列 + 步进计时
+  const STEP_FRAMES = 4;                             // 每 N 帧走一格（约 15 格/秒）
 
   function scene() { return SCENES[S.state.sceneId] || SCENES[0]; }
   // 切换当前场景：绑定真场景数据与障碍集
@@ -263,7 +265,7 @@
     raf = requestAnimationFrame(draw);
   }
 
-  function draw() { if (!active) return; if (cur.real) drawReal(); else drawProc(); }
+  function draw() { if (!active) return; if (!busy) pathTick(); if (cur.real) drawReal(); else drawProc(); }
 
   // —— 交互 ——
   function hint(msg) { const el = $('world-hint'); if (el) el.textContent = msg; }
@@ -276,6 +278,64 @@
         name: r.name, level: r.level, hp: r.hp, hpMax: r.hpMax, mp: r.mp, mpMax: r.mpMax, stamina: r.stamina, head: r.head,
       })));
     }
+  }
+
+  // —— 对话推进（点击任意处 / 回车 / 空格 都等价）——
+  function dialogOpen() { const b = $('dialog'); return !!(b && b.style.display === 'block'); }
+  function advanceDialog() { const b = $('dialog'); if (b && b.onclick) b.onclick(); }
+
+  // —— 点击自动寻路 ——
+  // 可落脚格：地面可走 且 无 NPC / 未清遭遇（中途不穿人）
+  function passableStep(x, y) {
+    if (cur.real) { if (!walkableReal(x, y)) return false; }
+    else {
+      if (x < 0 || y < 0 || y >= cur.map.length || x >= cur.map[0].length) return false;
+      if (blockedTile(x, y)) return false;
+    }
+    return !npcAt(x, y) && !encAt(x, y);
+  }
+  // 主角→(tx,ty) 最短路（4邻BFS），返回方向序列；目标是NPC/敌人则走到相邻格再撞入；不可达返回 null
+  function bfsDirs(tx, ty) {
+    const W = cur.real ? curSD.size : cur.map[0].length;
+    const H = cur.real ? curSD.size : cur.map.length;
+    if (tx < 0 || ty < 0 || tx >= W || ty >= H) return null;
+    const interactive = !!(npcAt(tx, ty) || encAt(tx, ty));
+    if (!interactive && !passableStep(tx, ty)) return null;     // 点到障碍/图外
+    const key = (x, y) => y * 256 + x;
+    const isGoal = interactive
+      ? (x, y) => (Math.abs(x - tx) + Math.abs(y - ty) === 1)   // 相邻即到
+      : (x, y) => (x === tx && y === ty);
+    const prev = new Map(); prev.set(key(hero.x, hero.y), null);
+    const q = [[hero.x, hero.y]]; let head = 0, goal = null;
+    if (isGoal(hero.x, hero.y)) goal = [hero.x, hero.y];
+    while (head < q.length && !goal) {
+      const [cx, cy] = q[head++];
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = cx + dx, ny = cy + dy, k = key(nx, ny);
+        if (prev.has(k) || !passableStep(nx, ny)) continue;
+        prev.set(k, [cx, cy]);
+        if (isGoal(nx, ny)) { goal = [nx, ny]; break; }
+        q.push([nx, ny]);
+      }
+    }
+    if (!goal) return null;
+    const tiles = []; let p = goal;
+    while (p) { tiles.push(p); p = prev.get(key(p[0], p[1])); }
+    tiles.reverse();                                            // [start … goal]
+    const dirs = [];
+    for (let i = 1; i < tiles.length; i++) dirs.push([tiles[i][0] - tiles[i - 1][0], tiles[i][1] - tiles[i - 1][1]]);
+    if (interactive) dirs.push([tx - goal[0], ty - goal[1]]);   // 末步撞入 NPC/敌人
+    return dirs;
+  }
+  // 每帧步进：到点走一格；触发对话/战斗/过图即止
+  function pathTick() {
+    if (!walkDirs.length) return;
+    if (++walkAcc < STEP_FRAMES) return;
+    walkAcc = 0;
+    const sceneBefore = S.state.sceneId;
+    const [dx, dy] = walkDirs.shift();
+    const ok = tryMove(dx, dy);
+    if (!ok || busy || S.state.sceneId !== sceneBefore) walkDirs = [];
   }
 
   // 移动一步；返回是否发生了移动/交互（供点击寻路判断）
@@ -363,33 +423,34 @@
   }
 
   function onKey(e) {
-    if (!active || busy) return;
+    if (!active) return;
     const k = e.key;
-    if (k === 'ArrowUp' || k === 'w') tryMove(0, -1);
-    else if (k === 'ArrowDown' || k === 's') tryMove(0, 1);
-    else if (k === 'ArrowLeft' || k === 'a') tryMove(-1, 0);
-    else if (k === 'ArrowRight' || k === 'd') tryMove(1, 0);
+    if (dialogOpen()) {                              // 对话中：回车/空格推进（与点击等价）
+      if (k === ' ' || k === 'Enter') { advanceDialog(); e.preventDefault(); }
+      return;
+    }
+    if (busy) return;
+    if (k === 'ArrowUp' || k === 'w') { walkDirs = []; tryMove(0, -1); }
+    else if (k === 'ArrowDown' || k === 's') { walkDirs = []; tryMove(0, 1); }
+    else if (k === 'ArrowLeft' || k === 'a') { walkDirs = []; tryMove(-1, 0); }
+    else if (k === 'ArrowRight' || k === 'd') { walkDirs = []; tryMove(1, 0); }
     else if (k === ' ' || k === 'Enter') interactFront();
     else return;
     e.preventDefault();
   }
-  // 点击：真场景=朝目标格迈一步（可连点行走）；程序场景=点相邻格走一步
+  // 点击：对话中=推进对话（替代回车）；否则=沿最短路自动寻路到点击格
   function onClick(evt) {
-    if (!active || busy) return;
+    if (!active) return;
+    if (dialogOpen()) { advanceDialog(); return; }
+    if (busy) return;
     const rect = canvas.getBoundingClientRect();
     const mx = (evt.clientX - rect.left) * (canvas.width / rect.width);
     const my = (evt.clientY - rect.top) * (canvas.height / rect.height);
-    if (cur.real) {
-      const g = rInv(mx + camX, my + camY);
-      const dx = g.gx - hero.x, dy = g.gy - hero.y;
-      if (dx === 0 && dy === 0) { interactFront(); return; }
-      const sx = Math.sign(dx), sy = Math.sign(dy);
-      const order = Math.abs(dx) >= Math.abs(dy) ? [[sx, 0], [0, sy]] : [[0, sy], [sx, 0]];
-      for (const [ux, uy] of order) { if (ux === 0 && uy === 0) continue; if (tryMove(ux, uy)) return; }
-    } else {
-      const g = isoInv(mx, my); const dx = g.gx - hero.x, dy = g.gy - hero.y;
-      if (Math.abs(dx) + Math.abs(dy) === 1) tryMove(dx, dy);
-    }
+    const g = cur.real ? rInv(mx + camX, my + camY) : isoInv(mx, my);
+    if (g.gx === hero.x && g.gy === hero.y) { walkDirs = []; interactFront(); return; }
+    const dirs = bfsDirs(g.gx, g.gy);
+    walkDirs = (dirs && dirs.length) ? dirs : [];
+    walkAcc = STEP_FRAMES;                            // 立即迈第一步
   }
 
   // 按 cur.real 调整画布尺寸与原点
@@ -402,9 +463,10 @@
     }
   }
 
-  const HINT = '方向键/WASD 或点击地面移动，撞向人物对话、撞向敌人开战';
+  const HINT = '方向键/WASD 或点击地面自动寻路，撞向人物对话、撞向敌人开战';
 
   function enter(sceneId, x, y) {
+    walkDirs = [];
     S.state.sceneId = sceneId; hero.x = x; hero.y = y;
     setCur();
     if (cur.real && !walkableReal(hero.x, hero.y) && cur.spawn) { hero.x = cur.spawn.x; hero.y = cur.spawn.y; }
@@ -422,21 +484,21 @@
     // 迁移/兜底：真场景若存档位置不可走（老存档或坐标失配），回出生点
     if (cur.real && !walkableReal(hero.x, hero.y) && cur.spawn) { hero.x = cur.spawn.x; hero.y = cur.spawn.y; }
     layout(); updateCam();
-    active = true; busy = false;
+    active = true; busy = false; walkDirs = [];
     document.addEventListener('keydown', onKey);
     canvas.addEventListener('click', onClick);
     hint(HINT); refreshBar();
     $('screen-world').classList.add('active');
     raf = requestAnimationFrame(draw);
   }
-  function pause() { active = false; cancelAnimationFrame(raf); $('screen-world').classList.remove('active'); }
+  function pause() { active = false; walkDirs = []; cancelAnimationFrame(raf); $('screen-world').classList.remove('active'); }
   function resume() {
     active = true; $('screen-world').classList.add('active');
     S.state.x = hero.x; S.state.y = hero.y; S.save();
     updateCam();
     raf = requestAnimationFrame(draw);
   }
-  function stop() { active = false; cancelAnimationFrame(raf); document.removeEventListener('keydown', onKey); if (canvas) canvas.removeEventListener('click', onClick); $('screen-world').classList.remove('active'); }
+  function stop() { active = false; walkDirs = []; cancelAnimationFrame(raf); document.removeEventListener('keydown', onKey); if (canvas) canvas.removeEventListener('click', onClick); $('screen-world').classList.remove('active'); }
 
-  JY.World = { start, pause, resume, stop, enter, SCENES, _dbg: () => ({ active, busy, hero: { x: hero.x, y: hero.y }, sceneId: S.state.sceneId, cam: { camX, camY }, real: !!(cur && cur.real) }), _move: (dx, dy) => tryMove(dx, dy) };
+  JY.World = { start, pause, resume, stop, enter, SCENES, _dbg: () => ({ active, busy, hero: { x: hero.x, y: hero.y }, sceneId: S.state.sceneId, cam: { camX, camY }, real: !!(cur && cur.real), path: walkDirs.length }), _click: (gx, gy) => { const d = bfsDirs(gx, gy); walkDirs = (d && d.length) ? d : []; walkAcc = STEP_FRAMES; return walkDirs.length; }, _move: (dx, dy) => tryMove(dx, dy) };
 })(window);
