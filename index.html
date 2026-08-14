@@ -32,6 +32,7 @@
       </div>
       <div id="world-hint"></div>
       <div class="world-foot">
+        <button id="btn-map" class="btn sm gold">大地图</button>
         <button id="btn-menu" class="btn sm gold">队伍 · 行囊</button>
         <button id="btn-world-title" class="btn sm">存档退出</button>
       </div>
@@ -53,6 +54,18 @@
           <div id="menu-bag" class="menu-bag pixel-box"></div>
         </div>
         <div id="menu-msg" class="menu-msg"></div>
+      </div>
+    </div>
+
+    <!-- 示意大地图（江湖） -->
+    <div id="worldmap">
+      <div class="wm-box">
+        <div class="wm-head">
+          <span class="wm-title">江 湖</span>
+          <span class="wm-hint">点选地名即往</span>
+          <button id="btn-map-close" class="btn sm">关闭</button>
+        </div>
+        <div id="worldmap-nodes" class="wm-canvas"></div>
       </div>
     </div>
 
@@ -123,9 +136,11 @@
   <script src="js/state.js"></script>
   <script src="js/battle.js"></script>
   <script src="js/scenedata.js"></script>
+  <script src="js/scenemeta.js"></script>
   <script src="js/events.js"></script>
   <script src="js/world.js"></script>
   <script src="js/menu.js"></script>
+  <script src="js/worldmap.js"></script>
   <script src="js/game.js"></script>
 </body>
 </html>

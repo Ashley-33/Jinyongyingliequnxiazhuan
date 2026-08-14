@@ -182,6 +182,20 @@
     },
   };
 
+  // 用 scenemeta 自动补全全部 84 个真场景（手写的 0/8/30/37/54 保留其 NPC/剧情；
+  // 程序占位 1野径/2黑风寨 被真场景 1桃花岛/2码头 覆盖）。大地图按钮负责离开。
+  if (window.JYSceneMeta) {
+    for (const id in window.JYSceneMeta) {
+      const nid = +id, m = window.JYSceneMeta[id];
+      if (SCENES[nid] && SCENES[nid].real) continue;
+      SCENES[nid] = {
+        name: m.name, real: true, img: 'assets/scene/' + id + '.png',
+        spawn: { x: m.spawn[0], y: m.spawn[1] },
+        npcs: [], encounters: [], exits: [],
+      };
+    }
+  }
+
   let cur = null, canvas = null, ctx = null, raf = 0, active = false;
   let curSD = null, blkSet = null, outSet = null;   // 当前真场景数据/障碍集/边界集
   let camX = 0, camY = 0;                            // 相机（真场景大图左上角像素）

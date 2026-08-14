@@ -298,3 +298,30 @@ html, body {
   .menu-detail, .menu-bag { width: 100%; }
   .dt-attrs { grid-template-columns: repeat(3,1fr); }
 }
+
+/* ================= 示意大地图（江湖） ================= */
+#worldmap { display: none; position: fixed; inset: 0; z-index: 70;
+  background: rgba(8,6,4,0.9); padding: 14px; }
+#worldmap.open { display: flex; align-items: center; justify-content: center; }
+.wm-box { width: 100%; max-width: 960px; height: 92vh; max-height: 680px; display: flex; flex-direction: column;
+  background: var(--panel-solid); border: 3px solid var(--gold); box-shadow: 0 8px 0 var(--shadow), 0 0 0 1px #000; padding: 12px 14px 14px; }
+.wm-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.wm-title { color: var(--gold-lt); font-size: 20px; letter-spacing: 6px; }
+.wm-hint { flex: 1; color: var(--ink-dim); font-size: 12px; letter-spacing: 1px; }
+.wm-canvas { position: relative; flex: 1; overflow: hidden; border: 2px solid var(--border);
+  background:
+    repeating-linear-gradient(45deg, rgba(120,90,50,0.05) 0 12px, transparent 12px 24px),
+    radial-gradient(120% 120% at 40% 30%, #2c2418 0%, #221a11 60%, #1a140d 100%); }
+.wm-node { position: absolute; transform: translate(-50%,-50%); cursor: pointer; background: none; border: none;
+  display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 2px; z-index: 1; }
+.wm-node i { width: 8px; height: 8px; border-radius: 50%; background: var(--gold); border: 1px solid #201607; box-shadow: 0 0 4px rgba(217,165,32,0.6); }
+.wm-node span { color: var(--ink); font-size: 10px; letter-spacing: 1px; text-shadow: 1px 1px 0 #000, -1px 1px 0 #000, 1px -1px 0 #000, -1px -1px 0 #000; white-space: nowrap; }
+.wm-node:hover { z-index: 5; }
+.wm-node:hover i { background: #fff; transform: scale(1.4); }
+.wm-node:hover span { color: var(--gold-lt); font-size: 12px; }
+.wm-node.here i { background: var(--player); box-shadow: 0 0 8px var(--player); }
+.wm-node.here span { color: var(--player); }
+@media (max-width: 700px) {
+  .wm-node span { font-size: 8px; }
+  .wm-title { font-size: 16px; letter-spacing: 3px; }
+}
