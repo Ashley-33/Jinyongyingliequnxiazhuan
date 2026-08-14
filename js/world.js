@@ -43,11 +43,33 @@
     0: {
       name: '小村', real: true, img: 'assets/scene/0.png',
       spawn: { x: 25, y: 36 },
+      onEnter: [
+        { do: 'say', who: '', lines: [
+          '【无量山下 · 小村】',
+          '你为寻访名医来到此地，却听闻近来山中恶匪横行，村民惶惶不安……'] },
+      ],
       npcs: [
-        { x: 27, y: 43, name: '村民', color: 200, lines: ['这里是无量山下的小村。', '近来山里出了恶匪，壮士千万小心。'] },
-        { x: 34, y: 27, name: '客栈掌柜', color: 40, type: 'inn', lines: ['客官打尖还是住店？', '（歇息片刻，生命内力已复原！）'] },
-        { x: 16, y: 34, name: '袁承志', color: 140, type: 'recruit', roleName: '袁承志',
-          lines: ['在下袁承志，也欲除去山中恶匪。', '既是同道，愿与壮士同行！'] },
+        { x: 27, y: 43, name: '村民', color: 200, script: [
+          { do: 'if', flag: 'met_villager',
+            then: [{ do: 'say', who: '村民', lines: ['壮士又来啦。山里的匪徒一日不除，我们一日不得安生。'] }],
+            else: [
+              { do: 'say', who: '村民', lines: ['这里是无量山下的小村。', '近来山里出了恶匪，壮士千万小心。', '这两瓶伤药你拿着，路上防身。'] },
+              { do: 'give', item: 2, count: 2 },
+              { do: 'flag', key: 'met_villager' },
+            ] },
+        ] },
+        { x: 34, y: 27, name: '客栈掌柜', color: 40, type: 'inn', script: [
+          { do: 'say', who: '客栈掌柜', lines: ['客官打尖还是住店？', '（歇息片刻，生命内力已复原！）'] },
+          { do: 'heal' },
+        ] },
+        { x: 16, y: 34, name: '袁承志', color: 140, type: 'recruit', roleName: '袁承志', script: [
+          { do: 'if', flag: 'recruited_袁承志',
+            then: [{ do: 'say', who: '袁承志', lines: ['同行仗义，正当其时！'] }],
+            else: [
+              { do: 'say', who: '袁承志', lines: ['在下袁承志，也欲除去山中恶匪。', '既是同道，愿与壮士同行！'] },
+              { do: 'recruit', role: '袁承志' },
+            ] },
+        ] },
       ],
       encounters: [],
       exits: [{ x: 25, y: 61, to: 1, tx: 7, ty: 1, label: '村口↓' }],
@@ -364,7 +386,44 @@
     const en = encAt(hero.x + d[0], hero.y + d[1]); if (en) startEncounter(en);
   }
 
+  // 事件引擎 IO 桥：把脚本步骤接到世界的对话/战斗/切场景/刷新
+  const evtIO = {
+    say: (who, lines, cb) => showDialog(who, lines, cb),
+    toast: (msg) => toast(msg),
+    battle: (teamNames, exp, cb) => runBattle(teamNames, exp, cb),
+    teleport: (to, x, y) => enter(to, x, y),
+    refresh: () => refreshBar(),
+  };
+  // 通用战斗（脚本 battle 步骤用）：打完回调 win
+  function runBattle(teamNames, exp, cb) {
+    pause();
+    const enemyRoles = (teamNames || []).map((n) => D.roleByName(n)).filter(Boolean);
+    JY.balanceEnemies(S.state.team, enemyRoles);
+    JY.Battle.start({
+      playerTeam: S.state.team, enemyTeam: enemyRoles, expEach: Math.round((exp || 0) / Math.max(1, enemyRoles.length)),
+      onEnd: (res) => {
+        const report = S.grantBattleRewards(res);
+        resume();
+        showRewards(res, report, () => { cb(res.win); });
+      },
+    });
+  }
+  // 进场景一次性事件（新游戏经 start()、过图经 enter() 都会触发，flag 保证只放一次）
+  function fireOnEnter() {
+    const sc = SCENES[S.state.sceneId], key = 'onEnter_' + S.state.sceneId;
+    if (!sc || !sc.onEnter || S.state.flags[key]) return;
+    S.state.flags[key] = true; S.save();
+    busy = true;
+    JY.Events.run(sc.onEnter, evtIO, () => { busy = false; });
+  }
+
   function interact(npc) {
+    if (npc.script && JY.Events) {                    // 脚本化 NPC → 走事件引擎
+      busy = true;
+      JY.Events.run(npc.script, evtIO, () => { busy = false; });
+      return;
+    }
+    // 旧式：固定台词 + inn/recruit（scene 1/2 尚未脚本化的 NPC）
     busy = true;
     showDialog(npc.name, npc.lines, () => {
       if (npc.type === 'inn') { S.healAll(); refreshBar(); }
@@ -474,6 +533,7 @@
     S.state.x = hero.x; S.state.y = hero.y; S.save();
     layout(); updateCam();
     hint(HINT); refreshBar();
+    fireOnEnter();
   }
 
   function start() {
@@ -491,6 +551,7 @@
     hint(HINT); refreshBar();
     $('screen-world').classList.add('active');
     raf = requestAnimationFrame(draw);
+    fireOnEnter();
   }
   function pause() { active = false; walkDirs = []; cancelAnimationFrame(raf); $('screen-world').classList.remove('active'); }
   function resume() {
