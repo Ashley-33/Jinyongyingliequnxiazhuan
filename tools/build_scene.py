@@ -164,12 +164,60 @@ def load_names():
     sc = json.load(open(os.path.join(ROOT, 'data', 'scenes.json')))
     return {i: str(r[1]).strip() for i, r in enumerate(sc['rows'])}
 
+def load_scenes():
+    return json.load(open(os.path.join(ROOT, 'data', 'scenes.json')))['rows']
+
+# 把坐标就近挪到可走格（入口/出口常在门/码头上）
+def nudge(jy, x, y):
+    bl = set(jy['blocked']); ou = set(jy['outside'])
+    w = lambda a, b: 0 <= a < SZ and 0 <= b < SZ and (b*SZ+a) not in bl and (b*SZ+a) not in ou
+    if w(x, y): return [x, y]
+    seen = {(x, y)}; dq = deque([(x, y)])
+    while dq:
+        cx, cy = dq.popleft()
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            n = (cx+dx, cy+dy)
+            if 0 <= n[0] < SZ and 0 <= n[1] < SZ and n not in seen:
+                if w(*n): return [n[0], n[1]]
+                seen.add(n); dq.append(n)
+    return [x, y]
+
+# 从 scenes.json 抽取场景元数据：spawn(入口)、exits(出口)、大地图坐标
+def scene_meta(s, jy, rows):
+    r = rows[s]
+    spawn = nudge(jy, r[10], r[11])
+    exits = []
+    for i in range(3):
+        ex, ey = r[12+i], r[15+i]
+        if (ex, ey) == (0, 0): continue
+        c = nudge(jy, ex, ey)
+        if c != spawn and c not in exits: exits.append(c)
+    return {'name': str(r[1]).strip(), 'spawn': spawn, 'exits': exits,
+            'mapx': r[6], 'mapy': r[7], 'jump': r[4]}
+
+# 批量渲染全部 84 场景 → png + scenedata.js(全部) + scenemeta.js
+def build_all():
+    rows = load_scenes(); jyall = {}; meta = {}
+    for s in range(NUM_SCENES):
+        canvas, jy = render(s)
+        if canvas is None: continue
+        canvas.save(os.path.join(ROOT, 'assets', 'scene', f'{s}.png'))
+        jyall[str(s)] = jy
+        meta[str(s)] = scene_meta(s, jy, rows)
+    open(os.path.join(ROOT, 'js', 'scenedata.js'), 'w').write(
+        'window.JYScene=' + json.dumps(jyall, separators=(',', ':')) + ';\n')
+    open(os.path.join(ROOT, 'js', 'scenemeta.js'), 'w').write(
+        'window.JYSceneMeta=' + json.dumps(meta, separators=(',', ':'), ensure_ascii=False) + ';\n')
+    print(f'渲染 {len(jyall)} 个场景 → assets/scene/*.png + js/scenedata.js + js/scenemeta.js')
+
 def main():
     args = sys.argv[1:]
     if not args:
         print(__doc__); return
     if args[0] == '--contact':
         contact(int(args[1]), int(args[2])); return
+    if args[0] == '--all':
+        build_all(); return
     write = False
     if args[0] == '--write':
         write = True; args = args[1:]
