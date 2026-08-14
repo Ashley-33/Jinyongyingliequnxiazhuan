@@ -11,7 +11,7 @@
     bag: [],             // [{id,count}]
     pages: {},           // {magicId: 已收集页数}
     money: 0,
-    sceneId: 0, x: 4, y: 6,
+    sceneId: 0, x: 25, y: 36,
     flags: {},           // 剧情/招募标记
     cleared: {},         // 已清除的遭遇 "sceneId:encId": true
   };
@@ -27,7 +27,7 @@
     state.team = [freshRole(0)];           // 主角小虾米
     state.bag = [{ id: 47, count: 3 }];    // 少量伤药（玉真散等）
     state.pages = {}; state.money = 100;
-    state.sceneId = 0; state.x = 7; state.y = 9;
+    state.sceneId = 0; state.x = 25; state.y = 36;   // 原版小村真场景出生点（村中土路）
     state.flags = {}; state.cleared = {};
     save();
   }

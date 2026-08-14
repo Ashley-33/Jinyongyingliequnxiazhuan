@@ -1,16 +1,23 @@
 /* ============================================================
  * world.js —— 江湖世界探索：场景行走 · NPC对话 · 客栈 · 招募 · 遭遇战
+ *
+ * 两种场景模式：
+ *  ① 原版真场景（cur.real）：预渲染大图(assets/scene/<id>.png) + 相机跟随 +
+ *     等距人物叠加，碰撞取 window.JYScene[id] 的 blocked/outside（64×64 逻辑格）。
+ *  ② 程序场景（ASCII map）：菱形地块即时绘制，保留给尚未拼图的场景(1野径/2黑风寨)。
+ *  两者共用同一套 NPC/遭遇/出口/对话/招募/客栈逻辑。
  * ============================================================ */
 (function (global) {
   const JY = global.JY || (global.JY = {});
   const D = JY.data, S = JY.state;
   const $ = (id) => document.getElementById(id);
-  const T = 38; // 探索格像素（逻辑格，用于移动/碰撞）
-  // —— 等距渲染 ——
+
+  // —— 等距参数（真场景与程序场景共用；与原版 smap 地块 36×18 一致）——
   const HW = 18, HH = 9;                  // 菱形地块半宽/半高
-  let isoOX = 0, isoOY = 40;              // 等距原点偏移（start时按场景算）
+  const VIEW_W = 672, VIEW_H = 384;       // 真场景视口（相机窗口）
+  let isoOX = 0, isoOY = 40;              // 程序场景等距原点（start时按场景算）
   function isoPos(gx, gy) { return { sx: Math.round(isoOX + (gx - gy) * HW), sy: Math.round(isoOY + (gx + gy) * HH) }; }
-  function isoInv(mx, my) {                // 屏幕→格（逆投影）
+  function isoInv(mx, my) {                // 屏幕→格（程序场景逆投影）
     const a = (mx - isoOX) / HW, b = (my - isoOY - HH) / HH;
     return { gx: Math.floor((a + b) / 2), gy: Math.floor((b - a) / 2) };
   }
@@ -20,32 +27,30 @@
     return GRASS[(x * 3 + y * 5) % 4];
   }
 
-  // —— 场景配置（tile: '.'草 '='路 '#'房墙 'T'树 '~'水；实体单列坐标）——
+  // —— 真场景大图缓存 ——
+  const sceneCache = {};
+  function sceneImg(url) {
+    if (!url) return null;
+    if (!sceneCache[url]) { const im = new Image(); im.src = url; sceneCache[url] = im; }
+    const im = sceneCache[url];
+    return (im.complete && im.naturalWidth > 0) ? im : null;
+  }
+
+  // —— 场景配置 ——
+  //  真场景：{ real:true, img, spawn:{x,y}, npcs/encounters/exits 用 64×64 格坐标 }
+  //  程序场景：tile map（'.'草 '='路 '#'房墙 'T'树 '~'水）
   const SCENES = {
     0: {
-      name: '小村', w: 15, h: 12,
-      map: [
-        '###############',
-        '#..T.......T..#',
-        '#.....===.....#',
-        '#..#..===..#..#',
-        '#..#..===..#..#',
-        '#.....===.....#',
-        '#.T...===...T.#',
-        '#.....===.....#',
-        '#.....===.....#',
-        '#..T.......T..#',
-        '#.............#',
-        '######...######',
-      ],
+      name: '小村', real: true, img: 'assets/scene/0.png',
+      spawn: { x: 25, y: 36 },
       npcs: [
-        { x: 3, y: 7, name: '村民', color: 200, lines: ['这里是无量山下的小村。', '近来山里出了恶匪，壮士千万小心。'] },
-        { x: 11, y: 7, name: '客栈掌柜', color: 40, type: 'inn', lines: ['客官打尖还是住店？', '（歇息片刻，生命内力已复原！）'] },
-        { x: 6, y: 9, name: '袁承志', color: 140, type: 'recruit', roleName: '袁承志',
+        { x: 27, y: 43, name: '村民', color: 200, lines: ['这里是无量山下的小村。', '近来山里出了恶匪，壮士千万小心。'] },
+        { x: 34, y: 27, name: '客栈掌柜', color: 40, type: 'inn', lines: ['客官打尖还是住店？', '（歇息片刻，生命内力已复原！）'] },
+        { x: 16, y: 34, name: '袁承志', color: 140, type: 'recruit', roleName: '袁承志',
           lines: ['在下袁承志，也欲除去山中恶匪。', '既是同道，愿与壮士同行！'] },
       ],
       encounters: [],
-      exits: [{ x: 7, y: 11, to: 1, tx: 7, ty: 1, label: '村口↓' }],
+      exits: [{ x: 25, y: 61, to: 1, tx: 7, ty: 1, label: '村口↓' }],
     },
     1: {
       name: '村口野径', w: 15, h: 12,
@@ -69,7 +74,7 @@
         { id: 'b', x: 7, y: 9, name: '毛贼', team: ['欧阳克'], exp: 70 },
       ],
       exits: [
-        { x: 7, y: 0, to: 0, tx: 7, ty: 10, label: '回村↑' },
+        { x: 7, y: 0, to: 0, tx: 25, ty: 58, label: '回村↑' },
         { x: 7, y: 11, to: 2, tx: 7, ty: 1, label: '黑风寨↓' },
       ],
     },
@@ -99,33 +104,45 @@
   };
 
   let cur = null, canvas = null, ctx = null, raf = 0, active = false;
-  const hero = { x: 4, y: 8, face: 'down' };
+  let curSD = null, blkSet = null, outSet = null;   // 当前真场景数据/障碍集/边界集
+  let camX = 0, camY = 0;                            // 相机（真场景大图左上角像素）
+  const hero = { x: 25, y: 36, face: 'down' };
   let busy = false; // 对话/切换/战斗中，暂停行走
 
   function scene() { return SCENES[S.state.sceneId] || SCENES[0]; }
+  // 切换当前场景：绑定真场景数据与障碍集
+  function setCur() {
+    cur = scene();
+    curSD = (cur.real && window.JYScene) ? window.JYScene[S.state.sceneId] : null;
+    if (curSD) { blkSet = new Set(curSD.blocked); outSet = new Set(curSD.outside || []); }
+    else { blkSet = outSet = null; }
+  }
+
+  // —— 真场景：格↔像素（大图坐标系）——
+  function rProj(gx, gy) { const px = curSD.ox + (gx - gy) * HW, py = curSD.oy + (gx + gy) * HH; return { cx: px + HW, fy: py + 2 * HH }; }
+  function rInv(sx, sy) { const a = (sx - curSD.ox - HW) / HW, b = (sy - curSD.oy - HH) / HH; return { gx: Math.round((a + b) / 2), gy: Math.round((b - a) / 2) }; }
+  function walkableReal(x, y) { const n = curSD.size; if (x < 0 || y < 0 || x >= n || y >= n) return false; const idx = y * n + x; return !blkSet.has(idx) && !outSet.has(idx); }
+  function updateCam() {
+    if (!curSD) return; const f = rProj(hero.x, hero.y);
+    camX = (curSD.iw <= VIEW_W) ? Math.round((curSD.iw - VIEW_W) / 2) : Math.max(0, Math.min(Math.round(f.cx - VIEW_W / 2), curSD.iw - VIEW_W));
+    camY = (curSD.ih <= VIEW_H) ? Math.round((curSD.ih - VIEW_H) / 2) : Math.max(0, Math.min(Math.round(f.fy - VIEW_H / 2), curSD.ih - VIEW_H));
+  }
+
+  // —— 程序场景：tile 取值/碰撞 ——
   function tileAt(x, y) {
     const m = cur.map;
     if (y < 0 || y >= m.length || x < 0 || x >= m[0].length) return '#';
     return m[y][x];
   }
-  function blocked(x, y) { return '#T~'.indexOf(tileAt(x, y)) >= 0; }
+  function blockedTile(x, y) { return '#T~'.indexOf(tileAt(x, y)) >= 0; }
+
   function npcAt(x, y) { return cur.npcs.find((n) => n.x === x && n.y === y); }
   function encAt(x, y) {
     return cur.encounters.find((e) => e.x === x && e.y === y && !S.state.cleared[S.state.sceneId + ':' + e.id]);
   }
   function exitAt(x, y) { return cur.exits.find((e) => e.x === x && e.y === y); }
 
-  // —— 渲染 ——
-  const TILE_COLORS = { '.': ['#2f4d2c', '#355731'], '=': ['#6b5836', '#7a6440'], '#': ['#4a3a2a', '#5c4835'], 'T': ['#1f3a1e', '#274a25'], '~': ['#254a6b', '#2d5a80'] };
-  function drawTile(x, y, ch) {
-    const sx = x * T, sy = y * T;
-    const c = TILE_COLORS[ch] || TILE_COLORS['.'];
-    ctx.fillStyle = ((x + y) & 1) ? c[0] : c[1];
-    ctx.fillRect(sx, sy, T, T);
-    if (ch === '#') { ctx.fillStyle = '#6f5645'; ctx.fillRect(sx + 3, sy + 2, T - 6, 7); ctx.fillStyle = '#3a2c1f'; ctx.fillRect(sx + 3, sy + 9, T - 6, T - 12); }
-    else if (ch === 'T') { ctx.fillStyle = '#1a2e19'; ctx.beginPath(); ctx.arc(sx + T / 2, sy + T / 2 - 2, 12, 0, 7); ctx.fill(); ctx.fillStyle = '#5b4636'; ctx.fillRect(sx + T / 2 - 2, sy + T - 12, 4, 8); }
-    else if (ch === '~') { ctx.fillStyle = 'rgba(120,180,220,0.25)'; ctx.fillRect(sx + 5, sy + 8, 10, 2); }
-  }
+  // —— 渲染基元 ——
   function npcHead(n) {
     if (n.head != null) return n.head;
     if (n.roleName) { const r = D.roleByName(n.roleName); if (r) return r.head; }
@@ -135,37 +152,16 @@
     if (e.team && e.team.length) { const r = D.roleByName(e.team[0]); if (r) return r.head; }
     return null;
   }
-  function drawPerson(px, py, hue, face, isHero, label, labelColor, headId) {
-    const cx = Math.round(px + T / 2), top = Math.round(py + 2);
-    ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.beginPath(); ctx.ellipse(cx, py + T - 5, 11, 3, 0, 0, 7); ctx.fill();
-    const hd = (headId != null && headId >= 0 && window.JY.assets) ? window.JY.assets.head(headId) : null;
-    if (hd) {
-      const w = 26, h = 27, hx = cx - w / 2, hy = top + 2;
-      ctx.fillStyle = isHero ? '#b8860b' : '#3a2c1f';
-      ctx.fillRect(hx - 2, hy - 2, w + 4, h + 4);
-      ctx.drawImage(hd, hx, hy, w, h);
-      if (isHero) { ctx.fillStyle = '#ffe27a'; ctx.fillRect(hx - 2, hy - 2, w + 4, 2); }
-    } else {
-      ctx.fillStyle = `hsl(${hue},55%,52%)`; ctx.fillRect(cx - 7, top + 12, 14, 15);
-      ctx.fillStyle = isHero ? '#b8860b' : `hsl(${hue},55%,38%)`; ctx.fillRect(cx - 7, top + 19, 14, 3);
-      ctx.fillStyle = '#f2c79a'; ctx.fillRect(cx - 5, top + 3, 10, 10);
-      ctx.fillStyle = '#2a1f16'; ctx.fillRect(cx - 6, top + 1, 12, 4);
-      ctx.fillStyle = '#1a1a1a';
-      if (face === 'left') ctx.fillRect(cx - 3, top + 7, 2, 2);
-      else if (face === 'right') ctx.fillRect(cx + 1, top + 7, 2, 2);
-      else if (face !== 'up') { ctx.fillRect(cx - 3, top + 7, 2, 2); ctx.fillRect(cx + 1, top + 7, 2, 2); }
-      if (isHero) { ctx.fillStyle = '#ffe27a'; ctx.fillRect(cx - 6, top + 1, 12, 2); }
-    }
-    if (label) {
-      ctx.font = '11px "Courier New",monospace'; ctx.textAlign = 'center';
-      ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.strokeText(label, cx, top - 3);
-      ctx.fillStyle = labelColor || '#e8dcc0'; ctx.fillText(label, cx, top - 3);
-    }
-  }
   function drawDiamond(sx, sy, fill) {
     ctx.fillStyle = fill; ctx.beginPath();
     ctx.moveTo(sx + HW, sy); ctx.lineTo(sx + 2 * HW, sy + HH);
     ctx.lineTo(sx + HW, sy + 2 * HH); ctx.lineTo(sx, sy + HH); ctx.closePath(); ctx.fill();
+  }
+  // 以脚点中心 cx / 顶点 topY 画菱形（真场景出口高亮用）
+  function drawDiamondC(cx, topY, fill) {
+    ctx.fillStyle = fill; ctx.beginPath();
+    ctx.moveTo(cx, topY); ctx.lineTo(cx + HW, topY + HH);
+    ctx.lineTo(cx, topY + 2 * HH); ctx.lineTo(cx - HW, topY + HH); ctx.closePath(); ctx.fill();
   }
   function drawIsoBuilding(cx, fy) {
     ctx.fillStyle = '#4a3728'; ctx.fillRect(cx - 15, fy - 30, 30, 28);
@@ -177,6 +173,7 @@
     ctx.fillStyle = '#1f3a1e'; ctx.beginPath(); ctx.arc(cx, fy - 24, 13, 0, 7); ctx.fill();
     ctx.fillStyle = '#2c4d28'; ctx.beginPath(); ctx.arc(cx - 4, fy - 28, 8, 0, 7); ctx.fill();
   }
+  // 等距人物：脚点(cx,fy)为屏幕坐标；优先原版全身战斗精灵，次头像，末程序小人
   function drawPersonIso(cx, fy, hue, isHero, label, labelColor, headId) {
     const A = window.JY.assets;
     ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(cx, fy - 2, 12, 5, 0, 0, 7); ctx.fill();
@@ -197,42 +194,76 @@
       ctx.fillStyle = labelColor || '#e8dcc0'; ctx.fillText(label, cx, fy - 42);
     }
   }
-  function draw() {
-    if (!active) return;
+
+  // 收集当前场景的动态实体（NPC/未清遭遇/主角），深度排序
+  function dynObjs() {
+    const objs = [];
+    cur.npcs.forEach((n) => { if (n.type === 'recruit' && S.state.flags['recruited_' + n.roleName]) return; objs.push({ x: n.x, y: n.y, k: 'npc', n }); });
+    cur.encounters.forEach((e) => { if (S.state.cleared[S.state.sceneId + ':' + e.id]) return; objs.push({ x: e.x, y: e.y, k: 'enc', e }); });
+    objs.push({ x: hero.x, y: hero.y, k: 'hero' });
+    objs.sort((a, b) => (a.x + a.y) - (b.x + b.y));
+    return objs;
+  }
+  function drawEntity(o, cx, fy) {
+    if (o.k === 'npc') drawPersonIso(cx, fy, o.n.color, false, o.n.name, o.n.type === 'inn' ? '#7ee0e0' : (o.n.type === 'recruit' ? '#7ee07e' : '#e8dcc0'), npcHead(o.n));
+    else if (o.k === 'enc') drawPersonIso(cx, fy, 0, false, o.e.boss ? '★' + o.e.name : o.e.name, '#ff7a7a', encHead(o.e));
+    else drawPersonIso(cx, fy, 210, true, S.state.team[0] ? S.state.team[0].name : '主角', '#ffe27a', S.state.team[0] ? S.state.team[0].head : 0);
+  }
+
+  // —— 真场景绘制（相机跟随）——
+  function drawReal() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const img = sceneImg(cur.img);
+    if (img) ctx.drawImage(img, camX, camY, VIEW_W, VIEW_H, 0, 0, VIEW_W, VIEW_H);
+    else {
+      ctx.fillStyle = '#161f13'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#9db38a'; ctx.font = '14px "Courier New",monospace'; ctx.textAlign = 'center';
+      ctx.fillText('载入原版场景…', canvas.width / 2, canvas.height / 2);
+    }
+    // 出口高亮
+    cur.exits.forEach((e) => {
+      const f = rProj(e.x, e.y), cx = f.cx - camX, topY = f.fy - 2 * HH - camY;
+      drawDiamondC(cx, topY, 'rgba(255,226,122,0.32)');
+      ctx.font = '10px "Courier New",monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffe27a';
+      ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.strokeText(e.label, cx, topY + HH + 4);
+      ctx.fillStyle = '#ffe27a'; ctx.fillText(e.label, cx, topY + HH + 4);
+    });
+    // 动态实体
+    dynObjs().forEach((o) => { const f = rProj(o.x, o.y); drawEntity(o, f.cx - camX, f.fy - camY); });
+    raf = requestAnimationFrame(draw);
+  }
+
+  // —— 程序场景绘制（即时菱形地块）——
+  function drawProc() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const H = cur.map.length, W = cur.map[0].length, A = window.JY.assets;
-    // 1) 地面层（原版菱形地块）
     for (let gy = 0; gy < H; gy++) for (let gx = 0; gx < W; gx++) {
       const ch = tileAt(gx, gy); const p = isoPos(gx, gy);
       if (!(A && A.drawGround(ctx, groundTile(ch, gx, gy), p.sx, p.sy)))
         drawDiamond(p.sx, p.sy, ch === '=' ? '#6b5836' : '#33532f');
     }
-    // 2) 出口高亮
     cur.exits.forEach((e) => {
       const p = isoPos(e.x, e.y); drawDiamond(p.sx, p.sy, 'rgba(255,226,122,0.30)');
       ctx.font = '10px "Courier New"'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffe27a';
       ctx.fillText(e.label, p.sx + HW, p.sy + HH + 3);
     });
-    // 3) 物件+人物层，按深度(gx+gy)排序绘制（正确遮挡）
     const objs = [];
     for (let gy = 0; gy < H; gy++) for (let gx = 0; gx < W; gx++) {
       const ch = tileAt(gx, gy);
       if (ch === '#' || ch === 'T') objs.push({ x: gx, y: gy, k: ch });
     }
-    cur.npcs.forEach((n) => { if (n.type === 'recruit' && S.state.flags['recruited_' + n.roleName]) return; objs.push({ x: n.x, y: n.y, k: 'npc', n }); });
-    cur.encounters.forEach((e) => { if (S.state.cleared[S.state.sceneId + ':' + e.id]) return; objs.push({ x: e.x, y: e.y, k: 'enc', e }); });
-    objs.push({ x: hero.x, y: hero.y, k: 'hero' });
+    dynObjs().forEach((o) => objs.push(o));
     objs.sort((a, b) => (a.x + a.y) - (b.x + b.y));
     objs.forEach((o) => {
       const p = isoPos(o.x, o.y), cx = p.sx + HW, fy = p.sy + 2 * HH;
       if (o.k === '#') drawIsoBuilding(cx, fy);
       else if (o.k === 'T') drawIsoTree(cx, fy);
-      else if (o.k === 'npc') drawPersonIso(cx, fy, o.n.color, false, o.n.name, o.n.type === 'inn' ? '#7ee0e0' : (o.n.type === 'recruit' ? '#7ee07e' : '#e8dcc0'), npcHead(o.n));
-      else if (o.k === 'enc') drawPersonIso(cx, fy, 0, false, o.e.boss ? '★' + o.e.name : o.e.name, '#ff7a7a', encHead(o.e));
-      else drawPersonIso(cx, fy, 210, true, S.state.team[0] ? S.state.team[0].name : '主角', '#ffe27a', S.state.team[0] ? S.state.team[0].head : 0);
+      else drawEntity(o, cx, fy);
     });
     raf = requestAnimationFrame(draw);
   }
+
+  function draw() { if (!active) return; if (cur.real) drawReal(); else drawProc(); }
 
   // —— 交互 ——
   function hint(msg) { const el = $('world-hint'); if (el) el.textContent = msg; }
@@ -247,19 +278,29 @@
     }
   }
 
+  // 移动一步；返回是否发生了移动/交互（供点击寻路判断）
   function tryMove(dx, dy) {
-    if (busy) return;
+    if (busy) return false;
     if (dx < 0) hero.face = 'left'; else if (dx > 0) hero.face = 'right';
     else if (dy < 0) hero.face = 'up'; else if (dy > 0) hero.face = 'down';
     const nx = hero.x + dx, ny = hero.y + dy;
-    if (blocked(nx, ny)) return;
-    if (npcAt(nx, ny)) { interact(npcAt(nx, ny)); return; }        // 撞到NPC=对话
-    const enc = encAt(nx, ny);
-    if (enc) { startEncounter(enc); return; }                      // 撞到敌人=开战
+    const solid = cur.real ? !walkableReal(nx, ny) : blockedTile(nx, ny);
+    if (solid) return false;
+    const n = npcAt(nx, ny); if (n) { interact(n); return true; }        // 撞到NPC=对话
+    const enc = encAt(nx, ny); if (enc) { startEncounter(enc); return true; } // 撞到敌人=开战
     hero.x = nx; hero.y = ny;
     const ex = exitAt(nx, ny);
     if (ex) enter(ex.to, ex.tx, ex.ty);
+    else if (cur.real) updateCam();
     refreshBar();
+    return true;
+  }
+  // 与面前一格交互（键盘空格/点击自身）
+  function interactFront() {
+    const dirs = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] };
+    const d = dirs[hero.face] || [0, 1];
+    const n = npcAt(hero.x + d[0], hero.y + d[1]); if (n) { interact(n); return; }
+    const en = encAt(hero.x + d[0], hero.y + d[1]); if (en) startEncounter(en);
   }
 
   function interact(npc) {
@@ -284,7 +325,10 @@
         const report = S.grantBattleRewards(res);
         if (res.win) { S.state.cleared[S.state.sceneId + ':' + enc.id] = true; S.save(); }
         resume();
-        showRewards(res, report, () => { busy = false; if (!res.win) { S.healAll(); enter(0, 4, 8); } });
+        showRewards(res, report, () => {
+          busy = false;
+          if (!res.win) { S.healAll(); const sp = SCENES[0].spawn; enter(0, sp.x, sp.y); }
+        });
       },
     });
   }
@@ -325,58 +369,74 @@
     else if (k === 'ArrowDown' || k === 's') tryMove(0, 1);
     else if (k === 'ArrowLeft' || k === 'a') tryMove(-1, 0);
     else if (k === 'ArrowRight' || k === 'd') tryMove(1, 0);
-    else if (k === ' ' || k === 'Enter') {
-      const dirs = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] };
-      const d = dirs[hero.face]; const n = npcAt(hero.x + d[0], hero.y + d[1]);
-      if (n) interact(n);
-      else { const en = encAt(hero.x + d[0], hero.y + d[1]); if (en) startEncounter(en); }
-    } else return;
+    else if (k === ' ' || k === 'Enter') interactFront();
+    else return;
     e.preventDefault();
   }
-  // 点击移动：点相邻格走一步 / 点自身格与面前交互
+  // 点击：真场景=朝目标格迈一步（可连点行走）；程序场景=点相邻格走一步
   function onClick(evt) {
     if (!active || busy) return;
     const rect = canvas.getBoundingClientRect();
     const mx = (evt.clientX - rect.left) * (canvas.width / rect.width);
     const my = (evt.clientY - rect.top) * (canvas.height / rect.height);
-    const g = isoInv(mx, my); const gx = g.gx, gy = g.gy;
-    const dx = gx - hero.x, dy = gy - hero.y;
-    if (Math.abs(dx) + Math.abs(dy) === 1) tryMove(dx, dy);
+    if (cur.real) {
+      const g = rInv(mx + camX, my + camY);
+      const dx = g.gx - hero.x, dy = g.gy - hero.y;
+      if (dx === 0 && dy === 0) { interactFront(); return; }
+      const sx = Math.sign(dx), sy = Math.sign(dy);
+      const order = Math.abs(dx) >= Math.abs(dy) ? [[sx, 0], [0, sy]] : [[0, sy], [sx, 0]];
+      for (const [ux, uy] of order) { if (ux === 0 && uy === 0) continue; if (tryMove(ux, uy)) return; }
+    } else {
+      const g = isoInv(mx, my); const dx = g.gx - hero.x, dy = g.gy - hero.y;
+      if (Math.abs(dx) + Math.abs(dy) === 1) tryMove(dx, dy);
+    }
   }
+
+  // 按 cur.real 调整画布尺寸与原点
+  function layout() {
+    if (cur.real) { canvas.width = VIEW_W; canvas.height = VIEW_H; }
+    else {
+      const _W = cur.map[0].length, _H = cur.map.length;
+      canvas.width = (_W + _H) * HW + 8; canvas.height = (_W + _H) * HH + 96;
+      isoOX = _H * HW + 4; isoOY = 48;
+    }
+  }
+
+  const HINT = '方向键/WASD 或点击地面移动，撞向人物对话、撞向敌人开战';
 
   function enter(sceneId, x, y) {
     S.state.sceneId = sceneId; hero.x = x; hero.y = y;
-    cur = scene(); S.save();
-    hint('方向键/WASD 或点击相邻格移动，撞向人物对话、撞向敌人开战');
-    refreshBar();
+    setCur();
+    if (cur.real && !walkableReal(hero.x, hero.y) && cur.spawn) { hero.x = cur.spawn.x; hero.y = cur.spawn.y; }
+    S.state.x = hero.x; S.state.y = hero.y; S.save();
+    layout(); updateCam();
+    hint(HINT); refreshBar();
   }
 
   function start() {
     canvas = $('world-canvas');
-    cur = scene();
-    { const _W = cur.map[0].length, _H = cur.map.length; canvas.width = (_W + _H) * HW + 8; canvas.height = (_W + _H) * HH + 96; isoOX = _H * HW + 4; isoOY = 48; }
     ctx = canvas.getContext('2d'); ctx.imageSmoothingEnabled = false;
-    hero.x = S.state.x != null ? S.state.x : 4; hero.y = S.state.y != null ? S.state.y : 8;
-    // 用存档位置
-    if (S.state.sceneId in SCENES) cur = SCENES[S.state.sceneId];
-    hero.x = S.state.x; hero.y = S.state.y;
-    { const _W = cur.map[0].length, _H = cur.map.length; canvas.width = (_W + _H) * HW + 8; canvas.height = (_W + _H) * HH + 96; isoOX = _H * HW + 4; isoOY = 48; }
+    setCur();
+    hero.x = S.state.x != null ? S.state.x : (cur.spawn ? cur.spawn.x : 4);
+    hero.y = S.state.y != null ? S.state.y : (cur.spawn ? cur.spawn.y : 8);
+    // 迁移/兜底：真场景若存档位置不可走（老存档或坐标失配），回出生点
+    if (cur.real && !walkableReal(hero.x, hero.y) && cur.spawn) { hero.x = cur.spawn.x; hero.y = cur.spawn.y; }
+    layout(); updateCam();
     active = true; busy = false;
     document.addEventListener('keydown', onKey);
     canvas.addEventListener('click', onClick);
-    hint('方向键/WASD 或点击相邻格移动，撞向人物对话、撞向敌人开战');
-    refreshBar();
+    hint(HINT); refreshBar();
     $('screen-world').classList.add('active');
     raf = requestAnimationFrame(draw);
   }
   function pause() { active = false; cancelAnimationFrame(raf); $('screen-world').classList.remove('active'); }
   function resume() {
     active = true; $('screen-world').classList.add('active');
-    // 保存当前位置
     S.state.x = hero.x; S.state.y = hero.y; S.save();
+    updateCam();
     raf = requestAnimationFrame(draw);
   }
   function stop() { active = false; cancelAnimationFrame(raf); document.removeEventListener('keydown', onKey); if (canvas) canvas.removeEventListener('click', onClick); $('screen-world').classList.remove('active'); }
 
-  JY.World = { start, pause, resume, stop, enter, SCENES, _dbg: () => ({ active, busy, hero: { x: hero.x, y: hero.y }, sceneId: S.state.sceneId }), _move: (dx, dy) => tryMove(dx, dy) };
+  JY.World = { start, pause, resume, stop, enter, SCENES, _dbg: () => ({ active, busy, hero: { x: hero.x, y: hero.y }, sceneId: S.state.sceneId, cam: { camX, camY }, real: !!(cur && cur.real) }), _move: (dx, dy) => tryMove(dx, dy) };
 })(window);
