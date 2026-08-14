@@ -144,15 +144,30 @@
     if (nm && !(nm in roleIdxByName)) roleIdxByName[nm] = i;
   });
 
+  // 物品效果列（数组下标，见 items.json columns）：加各属性 / 门槛
   function makeItem(row) {
     if (!row) return null;
+    const eff = {
+      hp: num(row[22]), hpMax: num(row[23]), detox: num(row[24]), stam: num(row[25]),
+      mpKind: num(row[26]), mp: num(row[27]), mpMax: num(row[28]),
+      atk: num(row[29]), qg: num(row[30]), def: num(row[31]),
+      heal: num(row[32]), usePoison: num(row[33]), antidote: num(row[34]), antiPoison: num(row[35]),
+      fist: num(row[36]), sword: num(row[37]), knife: num(row[38]), special: num(row[39]),
+      hidden: num(row[40]), knowledge: num(row[41]), moral: num(row[42]),
+      move: num(row[43]), poisonAtk: num(row[44]),
+    };
     return {
       id: num(row[I.id]),
       name: (row[I.name] || '').toString().trim(),
       desc: (row[I.desc] || '').toString().trim(),
-      type: num(row[I.type]),   // 0剧情 1装备 2秘笈 3药品 4暗器
+      type: num(row[I.type]),         // 0剧情 1装备 2秘笈 3药品 4暗器
       price: num(row[I.price]),
-      makeMagic: num(row[I.makeMagic]),
+      learnMagic: num(row[13]),       // 秘籍练出的武功 id（-1 无）
+      equipType: num(row[16]),        // 装备类型 0武器 1护甲（-1 非装备）
+      onlyUser: num(row[45]),         // 仅指定人物可修炼（-1 不限）
+      needIq: num(row[58]), needExp: num(row[59]),  // 修炼秘籍门槛
+      makeMagic: num(row[I.makeMagic]),             // 兼容旧字段（=learnMagic）
+      eff,
     };
   }
   const itemById = {};

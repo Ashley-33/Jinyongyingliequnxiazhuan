@@ -20,12 +20,14 @@
     const r = D.role(id);
     if (!r) return null;
     r.hp = r.hpMax; r.mp = r.mpMax; r.exp = r.exp || 0;
+    r.equip = { weapon: null, armor: null };   // 装备槽（存物品 id）
+    r.studied = [];                            // 已研读过的秘籍（永久加成只结算一次）
     return r;
   }
 
   function newGame() {
-    state.team = [freshRole(0)];           // 主角小虾米
-    state.bag = [{ id: 47, count: 3 }];    // 少量伤药（玉真散等）
+    state.team = [freshRole(0)];                       // 主角小虾米
+    state.bag = [{ id: 2, count: 3 }, { id: 27, count: 1 }];  // 玉真散×3 + 铁拳套×1
     state.pages = {}; state.money = 100;
     state.sceneId = 0; state.x = 25; state.y = 36;   // 原版小村真场景出生点（村中土路）
     state.flags = {}; state.cleared = {};
@@ -108,6 +110,98 @@
 
   function healAll() { state.team.forEach((r) => { r.hp = r.hpMax; r.mp = r.mpMax; }); save(); }
 
+  // ============ 背包 / 用物 / 装备 / 秘籍 ============
+  function bagAdd(id, count = 1) {
+    const b = state.bag.find((e) => e.id === id);
+    if (b) b.count += count; else state.bag.push({ id, count });
+  }
+  function bagRemove(id, count = 1) {
+    const b = state.bag.find((e) => e.id === id);
+    if (!b || b.count < count) return false;
+    b.count -= count;
+    if (b.count <= 0) state.bag = state.bag.filter((e) => e.id !== id);
+    return true;
+  }
+  function bagCount(id) { const b = state.bag.find((e) => e.id === id); return b ? b.count : 0; }
+
+  // 物品 eff 字段 -> 角色属性字段（用于装备/秘籍的永久加成，可加可减）
+  const STAT_MAP = {
+    hpMax: 'hpMax', mpMax: 'mpMax', atk: 'atk', qg: 'qg', def: 'def',
+    heal: 'heal', usePoison: 'usePoison', antidote: 'detox', antiPoison: 'antiPoison',
+    fist: 'fist', sword: 'sword', knife: 'knife', special: 'special',
+    hidden: 'hidden', knowledge: 'knowledge', move: 'moveRange',
+  };
+  function applyEff(r, eff, sign) {
+    for (const k in STAT_MAP) {
+      if (!eff[k]) continue;
+      const prop = STAT_MAP[k];
+      r[prop] = Math.max(0, (r[prop] || 0) + sign * eff[k]);
+    }
+    if (r.hpMax < 1) r.hpMax = 1;
+    r.hp = Math.min(r.hp, r.hpMax); r.mp = Math.min(r.mp, r.mpMax);
+  }
+
+  // 用药品：即时恢复(生命/内力/体力/解毒) + 永久加成(上限/属性)，消耗 1
+  function useItem(memberIdx, itemId) {
+    const r = state.team[memberIdx], it = D.item(itemId);
+    if (!r || !it || bagCount(itemId) <= 0) return null;
+    if (it.type !== 3 && it.type !== 4) return { fail: '此物品不能直接使用' };
+    bagRemove(itemId, 1);
+    const e = it.eff, rep = [];
+    if (e.hp) { const b = r.hp; r.hp = Math.min(r.hpMax, r.hp + e.hp); if (r.hp !== b) rep.push('生命+' + (r.hp - b)); }
+    if (e.mp) { const b = r.mp; r.mp = Math.min(r.mpMax, r.mp + e.mp); if (r.mp !== b) rep.push('内力+' + (r.mp - b)); }
+    if (e.stam) { const b = r.stamina || 100; r.stamina = Math.min(100, b + e.stam); if (r.stamina !== b) rep.push('体力+' + (r.stamina - b)); }
+    if (e.detox && r.poison) { r.poison = Math.max(0, r.poison - e.detox); rep.push('解毒'); }
+    const perm = { hpMax: e.hpMax, mpMax: e.mpMax, atk: e.atk, qg: e.qg, def: e.def, fist: e.fist, sword: e.sword, knife: e.knife, special: e.special, hidden: e.hidden, knowledge: e.knowledge };
+    if (Object.values(perm).some((v) => v)) { applyEff(r, perm, +1); rep.push('资质精进'); }
+    save();
+    return { name: it.name, who: r.name, rep: rep.length ? rep : ['（无明显效果）'] };
+  }
+
+  // 装备（0武器 1护甲）：换下旧的回背包，加/减属性，消耗 1
+  function equipItem(memberIdx, itemId) {
+    const r = state.team[memberIdx], it = D.item(itemId);
+    if (!r || !it || it.type !== 1 || bagCount(itemId) <= 0) return null;
+    if (it.onlyUser >= 0 && it.onlyUser !== r.id) return { fail: '此装备仅特定人物可用' };
+    if (!r.equip) r.equip = { weapon: null, armor: null };
+    const slot = it.equipType === 1 ? 'armor' : 'weapon';
+    bagRemove(itemId, 1);
+    if (r.equip[slot] != null) { const old = D.item(r.equip[slot]); if (old) { applyEff(r, old.eff, -1); bagAdd(r.equip[slot], 1); } }
+    applyEff(r, it.eff, +1);
+    r.equip[slot] = itemId;
+    save();
+    return { name: it.name, who: r.name, slot };
+  }
+  function unequip(memberIdx, slot) {
+    const r = state.team[memberIdx];
+    if (!r || !r.equip || r.equip[slot] == null) return null;
+    const it = D.item(r.equip[slot]);
+    if (it) { applyEff(r, it.eff, -1); bagAdd(r.equip[slot], 1); }
+    const name = it ? it.name : '装备';
+    r.equip[slot] = null; save();
+    return { name, who: r.name };
+  }
+
+  // 研读秘籍：满足资质→学会武功 + 一次性永久加成；书不消耗
+  function studyBook(memberIdx, itemId) {
+    const r = state.team[memberIdx], it = D.item(itemId);
+    if (!r || !it || it.type !== 2) return null;
+    if (it.learnMagic < 0) return { fail: '此书并无武功可修炼' };
+    if (it.onlyUser >= 0 && it.onlyUser !== r.id) return { fail: '此书仅特定人物可修炼' };
+    if ((r.iq || 0) < it.needIq) return { fail: '资质不足，需资质 ' + it.needIq };
+    const m = D.magic(it.learnMagic);
+    if (!m || !m.name) return { fail: '武功数据缺失' };
+    if (r.magics.some((x) => x.id === it.learnMagic)) return { fail: r.name + ' 已学会【' + m.name + '】' };
+    if (!learnMagic(r, it.learnMagic)) return { fail: '已学满 10 门武功' };
+    if (!r.studied) r.studied = [];
+    if (!r.studied.includes(itemId)) {
+      r.studied.push(itemId);
+      applyEff(r, { hpMax: it.eff.hpMax, mpMax: it.eff.mpMax, atk: it.eff.atk, qg: it.eff.qg, def: it.eff.def, fist: it.eff.fist, sword: it.eff.sword, knife: it.eff.knife, special: it.eff.special, hidden: it.eff.hidden, knowledge: it.eff.knowledge }, +1);
+    }
+    save();
+    return { learned: m.name, who: r.name };
+  }
+
   function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { } }
   function load() {
     try {
@@ -123,6 +217,7 @@
     state, freshRole, newGame, save, load, hasSave,
     addExp, levelUp, learnMagic, addPage, bookComplete, grantBattleRewards,
     recruit, healAll, needExpToNext, PAGES_PER_BOOK,
+    bagAdd, bagRemove, bagCount, useItem, equipItem, unequip, studyBook,
   };
 
   // 敌方战力对齐（世界遭遇 & 演武共用）

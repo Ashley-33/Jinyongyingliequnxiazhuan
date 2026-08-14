@@ -32,11 +32,29 @@
       </div>
       <div id="world-hint"></div>
       <div class="world-foot">
+        <button id="btn-menu" class="btn sm gold">队伍 · 行囊</button>
         <button id="btn-world-title" class="btn sm">存档退出</button>
       </div>
       <div id="dialog"></div>
       <div id="world-toast"></div>
     </section>
+
+    <!-- 队伍 / 行囊菜单（覆盖层） -->
+    <div id="menu-overlay">
+      <div class="menu-box pixel-box">
+        <div class="menu-head">
+          <span class="menu-title">队 伍 · 行 囊</span>
+          <span class="menu-money" id="menu-money"></span>
+          <button id="btn-menu-close" class="btn sm">关闭</button>
+        </div>
+        <div id="menu-members" class="menu-members"></div>
+        <div class="menu-cols">
+          <div id="menu-detail" class="menu-detail pixel-box"></div>
+          <div id="menu-bag" class="menu-bag pixel-box"></div>
+        </div>
+        <div id="menu-msg" class="menu-msg"></div>
+      </div>
+    </div>
 
     <!-- 选将出战（演武切磋） -->
     <section id="screen-select" class="screen">
@@ -106,6 +124,7 @@
   <script src="js/battle.js"></script>
   <script src="js/scenedata.js"></script>
   <script src="js/world.js"></script>
+  <script src="js/menu.js"></script>
   <script src="js/game.js"></script>
 </body>
 </html>

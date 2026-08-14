@@ -143,6 +143,7 @@
     $('btn-again').onclick = () => { picked = []; rollEnemies(); renderSelect(); show('screen-select'); };
     $('btn-to-title').onclick = () => show('screen-title');
     const bwt = $('btn-world-title'); if (bwt) bwt.onclick = () => { S.save(); JY.World.stop(); show('screen-title'); };
+    if (JY.Menu) JY.Menu.init();
 
     $('data-brief').textContent =
       `原版数据已载入：名将 ${D.roleCount} 人 · 武功 ${D.allMagics().length} 门 · 场景 ${D.allScenes().length} 处`;

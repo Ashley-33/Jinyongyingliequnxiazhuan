@@ -110,6 +110,7 @@
   let busy = false; // 对话/切换/战斗中，暂停行走
   let walkDirs = [], walkAcc = 0;                    // 点击自动寻路：待执行方向序列 + 步进计时
   const STEP_FRAMES = 4;                             // 每 N 帧走一格（约 15 格/秒）
+  let inputBlocked = false;                          // 打开菜单等覆盖层时暂停世界输入
 
   function scene() { return SCENES[S.state.sceneId] || SCENES[0]; }
   // 切换当前场景：绑定真场景数据与障碍集
@@ -423,7 +424,7 @@
   }
 
   function onKey(e) {
-    if (!active) return;
+    if (!active || inputBlocked) return;
     const k = e.key;
     if (dialogOpen()) {                              // 对话中：回车/空格推进（与点击等价）
       if (k === ' ' || k === 'Enter') { advanceDialog(); e.preventDefault(); }
@@ -440,7 +441,7 @@
   }
   // 点击：对话中=推进对话（替代回车）；否则=沿最短路自动寻路到点击格
   function onClick(evt) {
-    if (!active) return;
+    if (!active || inputBlocked) return;
     if (dialogOpen()) { advanceDialog(); return; }
     if (busy) return;
     const rect = canvas.getBoundingClientRect();
@@ -500,5 +501,5 @@
   }
   function stop() { active = false; walkDirs = []; cancelAnimationFrame(raf); document.removeEventListener('keydown', onKey); if (canvas) canvas.removeEventListener('click', onClick); $('screen-world').classList.remove('active'); }
 
-  JY.World = { start, pause, resume, stop, enter, SCENES, _dbg: () => ({ active, busy, hero: { x: hero.x, y: hero.y }, sceneId: S.state.sceneId, cam: { camX, camY }, real: !!(cur && cur.real), path: walkDirs.length }), _click: (gx, gy) => { const d = bfsDirs(gx, gy); walkDirs = (d && d.length) ? d : []; walkAcc = STEP_FRAMES; return walkDirs.length; }, _move: (dx, dy) => tryMove(dx, dy) };
+  JY.World = { start, pause, resume, stop, enter, SCENES, blockInput: (b) => { inputBlocked = !!b; walkDirs = []; }, refresh: () => { if (active) refreshBar(); }, _dbg: () => ({ active, busy, hero: { x: hero.x, y: hero.y }, sceneId: S.state.sceneId, cam: { camX, camY }, real: !!(cur && cur.real), path: walkDirs.length }), _click: (gx, gy) => { const d = bfsDirs(gx, gy); walkDirs = (d && d.length) ? d : []; walkAcc = STEP_FRAMES; return walkDirs.length; }, _move: (dx, dy) => tryMove(dx, dy) };
 })(window);
