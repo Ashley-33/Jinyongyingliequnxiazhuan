@@ -175,7 +175,11 @@
 
   function makeScene(row) {
     if (!row) return null;
-    return { id: num(row[S.id]), name: (row[S.name] || '').toString().trim() };
+    return {
+      id: num(row[S.id]), name: (row[S.name] || '').toString().trim(),
+      enter: { x: num(row[S.entX]), y: num(row[S.entY]) },        // 进场景落点(EntranceX/Y)
+      main: { x: num(row[S.mainX1]), y: num(row[S.mainY1]) },     // 在480大地图上的位置(外景入口)
+    };
   }
 
   // ============ 对外 API ============

@@ -205,7 +205,18 @@
   const STEP_FRAMES = 4;                             // 每 N 帧走一格（约 15 格/秒）
   let inputBlocked = false;                          // 打开菜单等覆盖层时暂停世界输入
 
-  function scene() { return SCENES[S.state.sceneId] || SCENES[0]; }
+  // 未手工接入但已有图+碰撞的场景 → 按 scenes.json 自动配置（入口=spawn，无NPC，出口回大地图）
+  function autoScene(id) {
+    const m = D.scene(id);
+    if (!m || !window.JYScene || !window.JYScene[id]) return null;
+    return {
+      name: m.name || ('场景' + id), real: true, img: 'assets/scene/' + id + '.png',
+      spawn: { x: m.enter.x, y: m.enter.y },
+      onEnter: [{ do: 'say', who: '', lines: ['【' + (m.name || '此地') + '】'] }],
+      npcs: [], encounters: [], exits: [], auto: true,
+    };
+  }
+  function scene() { return SCENES[S.state.sceneId] || autoScene(S.state.sceneId) || SCENES[0]; }
   // 切换当前场景：绑定真场景数据与障碍集
   function setCur() {
     cur = scene();
@@ -614,8 +625,9 @@
 
   function enter(sceneId, x, y) {
     walkDirs = []; busy = false;                        // 切场景：清行走队列，复位忙（脚本 teleport 后交给 onEnter 接管）
-    S.state.sceneId = sceneId; hero.x = x; hero.y = y;
-    setCur();
+    S.state.sceneId = sceneId; setCur();
+    if (x == null) { x = cur.spawn ? cur.spawn.x : hero.x; y = cur.spawn ? cur.spawn.y : hero.y; }
+    hero.x = x; hero.y = y;
     if (cur.real && !walkableReal(hero.x, hero.y)) { const p = nearestWalkable(hero.x, hero.y); hero.x = p.x; hero.y = p.y; }
     S.state.x = hero.x; S.state.y = hero.y; S.save();
     layout(); updateCam();
