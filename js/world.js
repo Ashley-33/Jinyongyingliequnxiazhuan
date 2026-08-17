@@ -71,10 +71,6 @@
               { do: 'recruit', role: '袁承志' },
             ] },
         ] },
-        { x: 25, y: 34, name: '驿卒', color: 60, script: [
-          { do: 'say', who: '驿卒', lines: ['壮士要出远门？', '我这就送你到衡阳城。'] },
-          { do: 'teleport', to: 30, x: 26, y: 26 },
-        ] },
       ],
       encounters: [],
       exits: [{ x: 25, y: 61, to: 'map', tx: 407, ty: 354, label: '出村→江湖' }],   // 村口通江湖(无量山脚一带)
@@ -83,54 +79,25 @@
       name: '衡阳城', real: true, img: 'assets/scene/30.png',
       spawn: { x: 26, y: 26 },
       onEnter: [{ do: 'say', who: '', lines: ['【衡阳城】', '街市喧闹，武林中人往来其间。'] }],
-      npcs: [
-        { x: 28, y: 26, name: '城门吏', color: 60, script: [
-          { do: 'say', who: '城门吏', lines: ['出城可回无量山下的小村。'] },
-          { do: 'teleport', to: 0, x: 25, y: 36 } ] },
-        { x: 25, y: 25, name: '指路人', color: 200, script: [
-          { do: 'say', who: '指路人', lines: ['沿官道往西，可上华山。'] },
-          { do: 'teleport', to: 37, x: 29, y: 28 } ] },
-        { x: 26, y: 28, name: '镖头', color: 140, script: [
-          { do: 'say', who: '镖头', lines: ['我正要往武当山送镖，捎你一程。'] },
-          { do: 'teleport', to: 54, x: 29, y: 28 } ] },
-        { x: 27, y: 24, name: '香客', color: 260, script: [
-          { do: 'say', who: '香客', lines: ['随我往大理天龙寺上香罢。'] },
-          { do: 'teleport', to: 8, x: 30, y: 43 } ] },
-      ],
-      encounters: [], exits: [],
+      npcs: [], encounters: [], exits: [],
     },
     8: {
       name: '天龙寺', real: true, img: 'assets/scene/8.png',
       spawn: { x: 30, y: 43 },
       onEnter: [{ do: 'say', who: '', lines: ['【大理 · 天龙寺】', '梵音阵阵，池水澄澈。'] }],
-      npcs: [
-        { x: 28, y: 43, name: '扫地僧', color: 260, script: [
-          { do: 'say', who: '扫地僧', lines: ['施主远来辛苦。', '出寺可回衡阳城。'] },
-          { do: 'teleport', to: 30, x: 26, y: 26 } ] },
-      ],
-      encounters: [], exits: [],
+      npcs: [], encounters: [], exits: [],
     },
     37: {
       name: '华山派', real: true, img: 'assets/scene/37.png',
       spawn: { x: 29, y: 28 },
       onEnter: [{ do: 'say', who: '', lines: ['【华山派】', '剑气纵横，气象森然。'] }],
-      npcs: [
-        { x: 29, y: 26, name: '华山弟子', color: 100, script: [
-          { do: 'say', who: '华山弟子', lines: ['师门重地，请勿喧哗。', '下山可回衡阳城。'] },
-          { do: 'teleport', to: 30, x: 26, y: 26 } ] },
-      ],
-      encounters: [], exits: [],
+      npcs: [], encounters: [], exits: [],
     },
     54: {
       name: '武当派', real: true, img: 'assets/scene/54.png',
       spawn: { x: 29, y: 28 },
       onEnter: [{ do: 'say', who: '', lines: ['【武当派】', '道家清静，紫气东来。'] }],
-      npcs: [
-        { x: 29, y: 26, name: '武当道人', color: 320, script: [
-          { do: 'say', who: '武当道人', lines: ['无量寿福。', '下山可回衡阳城。'] },
-          { do: 'teleport', to: 30, x: 26, y: 26 } ] },
-      ],
-      encounters: [], exits: [],
+      npcs: [], encounters: [], exits: [],
     },
     1: {
       name: '村口野径', w: 15, h: 12,
@@ -255,6 +222,9 @@
 
   let cur = null, canvas = null, ctx = null, raf = 0, active = false;
   let curSD = null, blkSet = null, outSet = null;   // 当前真场景数据/障碍集/边界集
+  let curEvents = [];                                // 当前场景原版事件(d1.grp)：NPC/物件/触发
+  const npcAtlas = new Image(); npcAtlas.src = 'assets/npc.png';   // 原版事件精灵图集
+  const eventAt = (x, y) => curEvents.find((e) => e.x === x && e.y === y);
   let camX = 0, camY = 0;                            // 相机（真场景大图左上角像素）
   const hero = { x: 25, y: 36, face: 'down' };
   let busy = false; // 对话/切换/战斗中，暂停行走
@@ -285,6 +255,9 @@
     curSD = (cur.real && window.JYScene) ? window.JYScene[S.state.sceneId] : null;
     if (curSD) { blkSet = new Set(curSD.blocked); outSet = new Set(curSD.outside || []); }
     else { blkSet = outSet = null; }
+    // 原版事件(NPC/物件)：载入本场景事件；阻挡格并入障碍集
+    curEvents = (curSD && window.JYNpc && window.JYNpc.scenes[String(S.state.sceneId)]) || [];
+    if (blkSet) curEvents.forEach((e) => { if (e.b) blkSet.add(e.y * curSD.size + e.x); });
   }
 
   // —— 真场景：格↔像素（大图坐标系）——
@@ -417,13 +390,20 @@
     const objs = [];
     cur.npcs.forEach((n) => { if (n.type === 'recruit' && S.state.flags['recruited_' + n.roleName]) return; objs.push({ x: n.x, y: n.y, k: 'npc', n }); });
     cur.encounters.forEach((e) => { if (S.state.cleared[S.state.sceneId + ':' + e.id]) return; objs.push({ x: e.x, y: e.y, k: 'enc', e }); });
+    curEvents.forEach((e) => objs.push({ x: e.x, y: e.y, k: 'event', e }));   // 原版 NPC/物件
     objs.push({ x: hero.x, y: hero.y, k: 'hero' });
     objs.sort((a, b) => (a.x + a.y) - (b.x + b.y));
     return objs;
   }
+  function drawEventSprite(e, cx, fy) {                 // 从原版精灵图集画事件(NPC/物件)
+    const spr = window.JYNpc && window.JYNpc.sprites[String(e.pic)];
+    if (!spr || !npcAtlas.complete || !npcAtlas.naturalWidth) return;
+    ctx.drawImage(npcAtlas, spr[0], spr[1], spr[2], spr[3], Math.round(cx - spr[4]), Math.round(fy - spr[5]), spr[2], spr[3]);
+  }
   function drawEntity(o, cx, fy) {
     if (o.k === 'npc') drawPersonIso(cx, fy, o.n.color, false, o.n.name, o.n.type === 'inn' ? '#7ee0e0' : (o.n.type === 'recruit' ? '#7ee07e' : '#e8dcc0'), npcHead(o.n));
     else if (o.k === 'enc') drawPersonIso(cx, fy, 0, false, o.e.boss ? '★' + o.e.name : o.e.name, '#ff7a7a', encHead(o.e));
+    else if (o.k === 'event') drawEventSprite(o.e, cx, fy);
     else drawPersonIso(cx, fy, 210, true, S.state.team[0] ? S.state.team[0].name : '主角', '#ffe27a', S.state.team[0] ? S.state.team[0].head : 0);
   }
 
@@ -607,6 +587,7 @@
     if (dx < 0) hero.face = 'left'; else if (dx > 0) hero.face = 'right';
     else if (dy < 0) hero.face = 'up'; else if (dy > 0) hero.face = 'down';
     const nx = hero.x + dx, ny = hero.y + dy;
+    if (cur.real && !cur.mainmap) { const ev = eventAt(nx, ny); if (ev && ev.e1 > 0) { interactEvent(ev); return true; } } // 撞原版NPC=对话
     const entSid = cur.mainmap ? mapEntranceAt(nx, ny) : null;    // 大地图上的场景入口(城镇图标格)
     const ex = cur.mainmap ? null : exitAt(nx, ny);              // 场景出口/跳转口(可能落在门格上，允许踏入)
     const solid = (entSid != null || ex) ? false : (cur.real ? !walkableReal(nx, ny) : blockedTile(nx, ny));
@@ -627,8 +608,15 @@
   function interactFront() {
     const dirs = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] };
     const d = dirs[hero.face] || [0, 1];
-    const n = npcAt(hero.x + d[0], hero.y + d[1]); if (n) { interact(n); return; }
-    const en = encAt(hero.x + d[0], hero.y + d[1]); if (en) startEncounter(en);
+    const fx = hero.x + d[0], fy = hero.y + d[1];
+    const n = npcAt(fx, fy); if (n) { interact(n); return; }
+    const ev = eventAt(fx, fy); if (ev && ev.e1 > 0) { interactEvent(ev); return; }
+    const en = encAt(fx, fy); if (en) startEncounter(en);
+  }
+  // 原版事件交互（阶段1占位对话；阶段2接入 talk 原版台词，阶段3跑 kdef 脚本）
+  function interactEvent(ev) {
+    busy = true;
+    showDialog('', ['……'], () => { busy = false; });
   }
 
   // 事件引擎 IO 桥：把脚本步骤接到世界的对话/战斗/切场景/刷新

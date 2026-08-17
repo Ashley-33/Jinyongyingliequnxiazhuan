@@ -7,7 +7,7 @@
   const S = JY.state;
   const $ = (id) => document.getElementById(id);
 
-  const VERSION = 'v0.6.1';   // 版本号：每次改动递增，页面右下角与标题页可见
+  const VERSION = 'v0.7.0';   // 版本号：每次改动递增，页面右下角与标题页可见
 
   // 候选名将 / 反派（存在于原版数据才显示）
   const HEROES = ['郭靖', '黄蓉', '乔峰', '段誉', '虚竹', '令狐冲', '张无忌', '杨过',
