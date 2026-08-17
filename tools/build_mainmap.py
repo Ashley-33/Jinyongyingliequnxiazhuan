@@ -14,7 +14,7 @@ RAW = os.path.join(os.path.dirname(__file__), '..', 'assets', 'raw')
 OUT_IMG = os.path.join(os.path.dirname(__file__), '..', 'assets', 'mainmap.png')
 OUT_JS = os.path.join(os.path.dirname(__file__), '..', 'js', 'mainmapdata.js')
 SZ, HW, HH = 480, 18, 9
-DOWN = int(sys.argv[1]) if len(sys.argv) > 1 else 6
+DOWN = int(sys.argv[1]) if len(sys.argv) > 1 else 3   # 行走用图缩放倍率（÷3 → 5760×2880）
 
 grp = open(f'{RAW}/mmap.grp', 'rb').read()
 idx = struct.unpack('<%dI' % (len(open(f'{RAW}/mmap.idx', 'rb').read()) // 4), open(f'{RAW}/mmap.idx', 'rb').read())
@@ -68,7 +68,9 @@ for y in range(SZ):
 
 ov = canvas.resize((IW // DOWN, IH // DOWN), Image.LANCZOS)
 ov.convert('RGB').save(OUT_IMG)
+# JYMainMap 用“行走用图”的坐标系（已 ÷DOWN），投影 rProj 直接落到该图像素
 open(OUT_JS, 'w').write('window.JYMainMap=%s;' % json.dumps(
-    {'size': SZ, 'hw': HW, 'hh': HH, 'ox': OX, 'iw': IW, 'ih': IH, 'blocked': blocked},
+    {'size': SZ, 'hw': HW / DOWN, 'hh': HH / DOWN, 'ox': OX // DOWN, 'oy': 0,
+     'iw': IW // DOWN, 'ih': IH // DOWN, 'blocked': blocked},
     separators=(',', ':')))
 print(f'合成瓦片 {cnt} · 总览图 {ov.size} → {OUT_IMG} · 可走性 blocked={len(blocked)} → {OUT_JS}')

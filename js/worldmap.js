@@ -62,7 +62,8 @@
     if (JY.World && JY.World.blockInput) JY.World.blockInput(false);
   }
   function init() {
-    const b = $('btn-map'); if (b) b.onclick = open;
+    // 「大地图」现在进入可走的江湖大地图；节点总览 open() 保留备用
+    const b = $('btn-map'); if (b) b.onclick = () => { if (JY.World && JY.World.enterMap) JY.World.enterMap(); else open(); };
     const c = $('btn-map-close'); if (c) c.onclick = close;
     const ov = $('worldmap'); if (ov) ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('worldmap').classList.contains('open')) { close(); e.preventDefault(); } });

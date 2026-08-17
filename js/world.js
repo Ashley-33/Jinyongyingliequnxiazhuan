@@ -196,6 +196,22 @@
     }
   }
 
+  // —— 大地图（江湖）伪场景：480×480 原版大地图当成超大真场景走，走到外景入口进场景 ——
+  const MAINMAP_ID = 'map';
+  const MAINMAP = { name: '江湖', real: true, mainmap: true, img: 'assets/mainmap.png', npcs: [], encounters: [], exits: [], spawn: { x: 240, y: 240 } };
+  const mapEntrances = [];          // [{x,y,id,name}] 画标签用
+  const mapEntranceLookup = {};     // cellIdx(y*480+x) → 场景id
+  (function () {
+    const meta = window.JYSceneMeta || {};
+    for (const id in meta) {
+      const m = meta[id];
+      if (!(m.mapx > 0 || m.mapy > 0)) continue;     // 只有外景入口(江湖上有位置)的场景才是大地图入口
+      mapEntrances.push({ x: m.mapx, y: m.mapy, id: +id, name: m.name });
+      mapEntranceLookup[m.mapy * 480 + m.mapx] = +id;
+    }
+  })();
+  function mapEntranceAt(x, y) { const v = mapEntranceLookup[y * 480 + x]; return v == null ? null : v; }
+
   let cur = null, canvas = null, ctx = null, raf = 0, active = false;
   let curSD = null, blkSet = null, outSet = null;   // 当前真场景数据/障碍集/边界集
   let camX = 0, camY = 0;                            // 相机（真场景大图左上角像素）
@@ -219,6 +235,11 @@
   function scene() { return SCENES[S.state.sceneId] || autoScene(S.state.sceneId) || SCENES[0]; }
   // 切换当前场景：绑定真场景数据与障碍集
   function setCur() {
+    if (S.state.sceneId === MAINMAP_ID) {
+      cur = MAINMAP; curSD = window.JYMainMap;
+      blkSet = new Set(curSD.blocked); outSet = new Set();
+      return;
+    }
     cur = scene();
     curSD = (cur.real && window.JYScene) ? window.JYScene[S.state.sceneId] : null;
     if (curSD) { blkSet = new Set(curSD.blocked); outSet = new Set(curSD.outside || []); }
@@ -226,8 +247,8 @@
   }
 
   // —— 真场景：格↔像素（大图坐标系）——
-  function rProj(gx, gy) { const px = curSD.ox + (gx - gy) * HW, py = curSD.oy + (gx + gy) * HH; return { cx: px + HW, fy: py + 2 * HH }; }
-  function rInv(sx, sy) { const a = (sx - curSD.ox - HW) / HW, b = (sy - curSD.oy - HH) / HH; return { gx: Math.round((a + b) / 2), gy: Math.round((b - a) / 2) }; }
+  function rProj(gx, gy) { const hw = curSD.hw || HW, hh = curSD.hh || HH; const px = curSD.ox + (gx - gy) * hw, py = (curSD.oy || 0) + (gx + gy) * hh; return { cx: px + hw, fy: py + 2 * hh }; }
+  function rInv(sx, sy) { const hw = curSD.hw || HW, hh = curSD.hh || HH; const a = (sx - curSD.ox - hw) / hw, b = (sy - (curSD.oy || 0) - hh) / hh; return { gx: Math.round((a + b) / 2), gy: Math.round((b - a) / 2) }; }
   function walkableReal(x, y) { const n = curSD.size; if (x < 0 || y < 0 || x >= n || y >= n) return false; const idx = y * n + x; return !blkSet.has(idx) && !outSet.has(idx); }
   // 入口常落在门/码头(建筑/水)格上 → BFS 就近挪到可走格，保证进场景后能动
   function nearestWalkable(x, y) {
@@ -386,7 +407,40 @@
     raf = requestAnimationFrame(draw);
   }
 
-  function draw() { if (!active) return; if (!busy) pathTick(); if (cur.real) drawReal(); else drawProc(); }
+  // —— 大地图（江湖）绘制：相机跟随大图 + 场景入口标签 + 玩家小人 ——
+  function drawMainmap() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const img = sceneImg(cur.img);
+    if (!img) {
+      ctx.fillStyle = '#10131c'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#8899aa'; ctx.font = '14px "Courier New",monospace'; ctx.textAlign = 'center';
+      ctx.fillText('载入江湖大地图…', canvas.width / 2, canvas.height / 2);
+      raf = requestAnimationFrame(draw); return;
+    }
+    ctx.drawImage(img, camX, camY, VIEW_W, VIEW_H, 0, 0, VIEW_W, VIEW_H);
+    ctx.textAlign = 'center';
+    mapEntrances.forEach((e) => {
+      const f = rProj(e.x, e.y), cx = f.cx - camX, cy = f.fy - camY;
+      if (cx < -40 || cx > VIEW_W + 40 || cy < -14 || cy > VIEW_H + 14) return;
+      ctx.fillStyle = '#f2cf6b'; ctx.strokeStyle = '#201607'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(cx, cy, 3, 0, 7); ctx.fill(); ctx.stroke();
+      ctx.font = '11px "Songti SC","Courier New",serif'; ctx.lineWidth = 3; ctx.strokeStyle = '#000';
+      ctx.strokeText(e.name, cx, cy - 5); ctx.fillStyle = '#ffe9b0'; ctx.fillText(e.name, cx, cy - 5);
+    });
+    const f = rProj(hero.x, hero.y);
+    drawMapPlayer(f.cx - camX, f.fy - camY);
+    raf = requestAnimationFrame(draw);
+  }
+  function drawMapPlayer(cx, cy) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.beginPath(); ctx.ellipse(cx, cy, 5, 2.5, 0, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.fillStyle = '#d24b4b';
+    ctx.beginPath(); ctx.moveTo(cx - 4, cy - 2); ctx.lineTo(cx + 4, cy - 2); ctx.lineTo(cx + 3, cy - 11); ctx.lineTo(cx - 3, cy - 11); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#f0c89a'; ctx.beginPath(); ctx.arc(cx, cy - 14, 3.5, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+
+  function draw() { if (!active) return; if (!busy) pathTick(); if (cur.mainmap) drawMainmap(); else if (cur.real) drawReal(); else drawProc(); }
 
   // —— 交互 ——
   function hint(msg) { const el = $('world-hint'); if (el) el.textContent = msg; }
@@ -408,6 +462,7 @@
   // —— 点击自动寻路 ——
   // 可落脚格：地面可走 且 无 NPC / 未清遭遇（中途不穿人）
   function passableStep(x, y) {
+    if (cur.mainmap && mapEntranceAt(x, y) != null) return true;   // 城镇入口格可作寻路目标
     if (cur.real) { if (!walkableReal(x, y)) return false; }
     else {
       if (x < 0 || y < 0 || y >= cur.map.length || x >= cur.map[0].length) return false;
@@ -465,14 +520,20 @@
     if (dx < 0) hero.face = 'left'; else if (dx > 0) hero.face = 'right';
     else if (dy < 0) hero.face = 'up'; else if (dy > 0) hero.face = 'down';
     const nx = hero.x + dx, ny = hero.y + dy;
-    const solid = cur.real ? !walkableReal(nx, ny) : blockedTile(nx, ny);
+    const entSid = cur.mainmap ? mapEntranceAt(nx, ny) : null;    // 大地图上的场景入口(城镇图标格)
+    const solid = (entSid != null) ? false : (cur.real ? !walkableReal(nx, ny) : blockedTile(nx, ny));
     if (solid) return false;
     const n = npcAt(nx, ny); if (n) { interact(n); return true; }        // 撞到NPC=对话
     const enc = encAt(nx, ny); if (enc) { startEncounter(enc); return true; } // 撞到敌人=开战
     hero.x = nx; hero.y = ny;
-    const ex = exitAt(nx, ny);
-    if (ex) enter(ex.to, ex.tx, ex.ty);
-    else if (cur.real) updateCam();
+    if (cur.mainmap) {
+      updateCam();
+      if (entSid != null) { S.state.mapX = nx; S.state.mapY = ny; enter(entSid); }   // 走上城镇→进场景
+    } else {
+      const ex = exitAt(nx, ny);
+      if (ex) enter(ex.to, ex.tx, ex.ty);
+      else if (cur.real) updateCam();
+    }
     refreshBar();
     return true;
   }
@@ -635,6 +696,17 @@
     fireOnEnter();
   }
 
+  // 进入江湖大地图（可走）。x/y 缺省取上次大地图位置，否则中心；落水/山自动挪到可走格
+  function enterMap(x, y) {
+    walkDirs = []; busy = false;
+    S.state.sceneId = MAINMAP_ID; setCur();
+    if (x == null) { x = S.state.mapX != null ? S.state.mapX : MAINMAP.spawn.x; y = S.state.mapY != null ? S.state.mapY : MAINMAP.spawn.y; }
+    const p = nearestWalkable(x, y); hero.x = p.x; hero.y = p.y;
+    S.state.mapX = hero.x; S.state.mapY = hero.y; S.state.x = hero.x; S.state.y = hero.y; S.save();
+    layout(); updateCam();
+    hint('【江湖】方向键 / 点击行走，走上城镇即进入'); refreshBar();
+  }
+
   function start() {
     canvas = $('world-canvas');
     ctx = canvas.getContext('2d'); ctx.imageSmoothingEnabled = false;
@@ -661,5 +733,5 @@
   }
   function stop() { active = false; walkDirs = []; cancelAnimationFrame(raf); document.removeEventListener('keydown', onKey); if (canvas) canvas.removeEventListener('click', onClick); $('screen-world').classList.remove('active'); }
 
-  JY.World = { start, pause, resume, stop, enter, SCENES, blockInput: (b) => { inputBlocked = !!b; walkDirs = []; }, refresh: () => { if (active) refreshBar(); }, _dbg: () => ({ active, busy, hero: { x: hero.x, y: hero.y }, sceneId: S.state.sceneId, cam: { camX, camY }, real: !!(cur && cur.real), path: walkDirs.length }), _click: (gx, gy) => { const d = bfsDirs(gx, gy); walkDirs = (d && d.length) ? d : []; walkAcc = STEP_FRAMES; return walkDirs.length; }, _move: (dx, dy) => tryMove(dx, dy) };
+  JY.World = { start, pause, resume, stop, enter, enterMap, SCENES, blockInput: (b) => { inputBlocked = !!b; walkDirs = []; }, refresh: () => { if (active) refreshBar(); }, _dbg: () => ({ active, busy, hero: { x: hero.x, y: hero.y }, sceneId: S.state.sceneId, cam: { camX, camY }, real: !!(cur && cur.real), path: walkDirs.length }), _click: (gx, gy) => { const d = bfsDirs(gx, gy); walkDirs = (d && d.length) ? d : []; walkAcc = STEP_FRAMES; return walkDirs.length; }, _move: (dx, dy) => tryMove(dx, dy) };
 })(window);
