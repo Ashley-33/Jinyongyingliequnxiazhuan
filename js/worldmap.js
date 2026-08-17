@@ -29,24 +29,32 @@
 
   function open() {
     const meta = window.JYSceneMeta || {};
+    const mm = window.JYMainMap || { ox: 8640, iw: 17280, ih: 8640, hw: 18, hh: 9 };
     const wrap = $('worldmap-nodes'); wrap.innerHTML = '';
-    const rect = wrap.getBoundingClientRect();
-    const W = rect.width || 900, H = rect.height || 560;
-    const pad = 26, sx = (W - pad * 2) / MW, sy = (H - pad * 2) / MW;
+    $('worldmap').classList.add('open');                 // 先显示，才能量到画布尺寸
+    // 在画布内放一块按 2:1 等距地图比例、居中贴合的“真地图”层，节点按等距投影落在其上
+    const ar = mm.iw / mm.ih, cw = wrap.clientWidth || 900, ch = wrap.clientHeight || 520;
+    let mw, mh; if (cw / ch > ar) { mh = ch; mw = ch * ar; } else { mw = cw; mh = cw / ar; }
+    const map = document.createElement('div');
+    map.className = 'wm-map';
+    map.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);'
+      + 'width:' + Math.round(mw) + 'px;height:' + Math.round(mh) + 'px;'
+      + "background:url('assets/mainmap.png') center/100% 100% no-repeat;image-rendering:pixelated;";
+    wrap.appendChild(map);
     const pos = positions(meta);
     const cur = JY.state && JY.state.state ? JY.state.state.sceneId : -1;
     Object.keys(meta).forEach((id) => {
       const m = meta[id], p = pos[id];
-      const x = Math.round(pad + p[0] * sx), y = Math.round(pad + p[1] * sy);
+      const px = (p[0] - p[1]) * mm.hw + mm.ox, py = (p[0] + p[1]) * mm.hh;   // 等距投影(全图像素)
       const b = document.createElement('button');
       b.className = 'wm-node' + (+id === cur ? ' here' : '');
-      b.style.left = x + 'px'; b.style.top = y + 'px';
+      b.style.left = (px / mm.iw * 100) + '%';
+      b.style.top = (py / mm.ih * 100) + '%';
       b.title = m.name;
       b.innerHTML = `<i></i><span>${m.name}</span>`;
       b.onclick = () => { close(); JY.World.enter(+id, m.spawn[0], m.spawn[1]); };
-      wrap.appendChild(b);
+      map.appendChild(b);
     });
-    $('worldmap').classList.add('open');
     if (JY.World && JY.World.blockInput) JY.World.blockInput(true);
   }
   function close() {
