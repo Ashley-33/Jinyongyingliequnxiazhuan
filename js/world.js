@@ -14,7 +14,8 @@
 
   // —— 等距参数（真场景与程序场景共用；与原版 smap 地块 36×18 一致）——
   const HW = 18, HH = 9;                  // 菱形地块半宽/半高
-  const VIEW_W = 672, VIEW_H = 384;       // 真场景视口（相机窗口）
+  const VIEW_W = 672, VIEW_H = 384;       // 真场景视口（相机窗口，逻辑坐标）
+  const R = 2;                            // 画布底层超采样倍率：文字按 R× 栅格化 → 放大显示仍清晰
   let isoOX = 0, isoOY = 40;              // 程序场景等距原点（start时按场景算）
   function isoPos(gx, gy) { return { sx: Math.round(isoOX + (gx - gy) * HW), sy: Math.round(isoOY + (gx + gy) * HH) }; }
   function isoInv(mx, my) {                // 屏幕→格（程序场景逆投影）
@@ -356,7 +357,8 @@
 
   // —— 真场景绘制（相机跟随）——
   function drawReal() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.setTransform(R, 0, 0, R, 0, 0); ctx.imageSmoothingEnabled = false;   // 场景像素画保持锐利
+    ctx.clearRect(0, 0, VIEW_W, VIEW_H);
     const img = sceneImg(cur.img);
     if (img) ctx.drawImage(img, camX, camY, VIEW_W, VIEW_H, 0, 0, VIEW_W, VIEW_H);
     else {
@@ -379,6 +381,7 @@
 
   // —— 程序场景绘制（即时菱形地块）——
   function drawProc() {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);                 // 程序场景画布无超采样
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const H = cur.map.length, W = cur.map[0].length, A = window.JY.assets;
     for (let gy = 0; gy < H; gy++) for (let gx = 0; gx < W; gx++) {
@@ -408,24 +411,39 @@
   }
 
   // —— 大地图（江湖）绘制：相机跟随大图 + 场景入口标签 + 玩家小人 ——
+  function rr(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
   function drawMainmap() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.setTransform(R, 0, 0, R, 0, 0); ctx.imageSmoothingEnabled = true;   // 大地图缩放平滑
+    ctx.clearRect(0, 0, VIEW_W, VIEW_H);
     const img = sceneImg(cur.img);
     if (!img) {
-      ctx.fillStyle = '#10131c'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = '#8899aa'; ctx.font = '14px "Courier New",monospace'; ctx.textAlign = 'center';
-      ctx.fillText('载入江湖大地图…', canvas.width / 2, canvas.height / 2);
+      ctx.fillStyle = '#10131c'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+      ctx.fillStyle = '#8899aa'; ctx.font = '13px "Courier New",monospace'; ctx.textAlign = 'center';
+      ctx.fillText('载入江湖大地图…', VIEW_W / 2, VIEW_H / 2);
       raf = requestAnimationFrame(draw); return;
     }
     ctx.drawImage(img, camX, camY, VIEW_W, VIEW_H, 0, 0, VIEW_W, VIEW_H);
-    ctx.textAlign = 'center';
+    // 城镇入口：地面光圈 + 带底色的地名标签（清楚标出可进入及去向）
     mapEntrances.forEach((e) => {
       const f = rProj(e.x, e.y), cx = f.cx - camX, cy = f.fy - camY;
-      if (cx < -40 || cx > VIEW_W + 40 || cy < -14 || cy > VIEW_H + 14) return;
-      ctx.fillStyle = '#f2cf6b'; ctx.strokeStyle = '#201607'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.arc(cx, cy, 3, 0, 7); ctx.fill(); ctx.stroke();
-      ctx.font = '11px "Songti SC","Courier New",serif'; ctx.lineWidth = 3; ctx.strokeStyle = '#000';
-      ctx.strokeText(e.name, cx, cy - 5); ctx.fillStyle = '#ffe9b0'; ctx.fillText(e.name, cx, cy - 5);
+      if (cx < -70 || cx > VIEW_W + 70 || cy < -34 || cy > VIEW_H + 20) return;
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.beginPath(); ctx.ellipse(cx, cy, 11, 5.5, 0, 0, 7); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,214,100,0.20)'; ctx.beginPath(); ctx.ellipse(cx, cy, 10, 5, 0, 0, 7); ctx.fill();
+      ctx.strokeStyle = '#ffd964'; ctx.beginPath(); ctx.ellipse(cx, cy, 10, 5, 0, 0, 7); ctx.stroke();
+      const label = e.name;
+      ctx.font = 'bold 12px "Songti SC","PingFang SC",serif';
+      const bw = ctx.measureText(label).width + 12, bh = 16, bx = cx - bw / 2, by = cy - 27;
+      ctx.fillStyle = 'rgba(24,16,9,0.85)'; rr(bx, by, bw, bh, 4); ctx.fill();
+      ctx.strokeStyle = '#b78a44'; ctx.lineWidth = 1; rr(bx, by, bw, bh, 4); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx - 4, by + bh); ctx.lineTo(cx + 4, by + bh); ctx.lineTo(cx, by + bh + 4); ctx.closePath();
+      ctx.fillStyle = 'rgba(24,16,9,0.85)'; ctx.fill();
+      ctx.fillStyle = '#ffe9b0'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(label, cx, by + bh / 2 + 0.5); ctx.textBaseline = 'alphabetic';
     });
     const f = rProj(hero.x, hero.y);
     drawMapPlayer(f.cx - camX, f.fy - camY);
@@ -663,8 +681,9 @@
     if (dialogOpen()) { advanceDialog(); return; }
     if (busy) return;
     const rect = canvas.getBoundingClientRect();
-    const mx = (evt.clientX - rect.left) * (canvas.width / rect.width);
-    const my = (evt.clientY - rect.top) * (canvas.height / rect.height);
+    const lw = cur.real ? VIEW_W : canvas.width, lh = cur.real ? VIEW_H : canvas.height;   // 逻辑坐标(真场景已超采样)
+    const mx = (evt.clientX - rect.left) / rect.width * lw;
+    const my = (evt.clientY - rect.top) / rect.height * lh;
     const g = cur.real ? rInv(mx + camX, my + camY) : isoInv(mx, my);
     if (g.gx === hero.x && g.gy === hero.y) { walkDirs = []; interactFront(); return; }
     const dirs = bfsDirs(g.gx, g.gy);
@@ -674,7 +693,7 @@
 
   // 按 cur.real 调整画布尺寸与原点
   function layout() {
-    if (cur.real) { canvas.width = VIEW_W; canvas.height = VIEW_H; }
+    if (cur.real) { canvas.width = VIEW_W * R; canvas.height = VIEW_H * R; }
     else {
       const _W = cur.map[0].length, _H = cur.map.length;
       canvas.width = (_W + _H) * HW + 8; canvas.height = (_W + _H) * HH + 96;
