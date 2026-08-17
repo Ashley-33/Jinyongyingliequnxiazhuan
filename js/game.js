@@ -7,6 +7,8 @@
   const S = JY.state;
   const $ = (id) => document.getElementById(id);
 
+  const VERSION = 'v0.6.0';   // 版本号：每次改动递增，页面右下角与标题页可见
+
   // 候选名将 / 反派（存在于原版数据才显示）
   const HEROES = ['郭靖', '黄蓉', '乔峰', '段誉', '虚竹', '令狐冲', '张无忌', '杨过',
     '小龙女', '洪七公', '周伯通', '黄药师', '袁承志', '胡斐', '石破天', '韦小宝', '张三丰'];
@@ -151,6 +153,8 @@
 
     const cont = $('btn-continue');
     if (cont) cont.style.display = S.hasSave() ? '' : 'none';
+
+    document.querySelectorAll('.game-version').forEach((el) => { el.textContent = VERSION; });
 
     show('screen-title');
   }

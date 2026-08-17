@@ -77,7 +77,7 @@
         ] },
       ],
       encounters: [],
-      exits: [{ x: 25, y: 61, to: 1, tx: 7, ty: 1, label: '村口↓' }],
+      exits: [{ x: 25, y: 61, to: 'map', tx: 407, ty: 354, label: '出村→江湖' }],   // 村口通江湖(无量山脚一带)
     },
     30: {
       name: '衡阳城', real: true, img: 'assets/scene/30.png',
@@ -284,6 +284,21 @@
       if (walkableReal(sx + dx, sy + dy)) return { x: sx + dx, y: sy + dy };
     return nearestWalkable(sx, sy);       // 彻底被围才远挪
   }
+  // (x1,y1) 是否能走到 (x2,y2)（同一连通可走区）——判断落点是否与内容质心相通
+  function connected(x1, y1, x2, y2) {
+    if (!walkableReal(x1, y1)) return false;
+    const SZ = curSD.size, seen = new Set([y1 * SZ + x1]), q = [[x1, y1]];
+    for (let h = 0; h < q.length; h++) {
+      const [cx, cy] = q[h];
+      if (cx === x2 && cy === y2) return true;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = cx + dx, ny = cy + dy, k = ny * SZ + nx;
+        if (nx < 0 || ny < 0 || nx >= SZ || ny >= SZ || seen.has(k) || !walkableReal(nx, ny)) continue;
+        seen.add(k); q.push([nx, ny]);
+      }
+    }
+    return false;
+  }
   function updateCam() {
     if (!curSD) return; const f = rProj(hero.x, hero.y);
     camX = (curSD.iw <= VIEW_W) ? Math.round((curSD.iw - VIEW_W) / 2) : Math.max(0, Math.min(Math.round(f.cx - VIEW_W / 2), curSD.iw - VIEW_W));
@@ -385,14 +400,8 @@
       ctx.fillStyle = '#9db38a'; ctx.font = '14px "Courier New",monospace'; ctx.textAlign = 'center';
       ctx.fillText('载入原版场景…', canvas.width / 2, canvas.height / 2);
     }
-    // 出口高亮
-    cur.exits.forEach((e) => {
-      const f = rProj(e.x, e.y), cx = f.cx - camX, topY = f.fy - 2 * HH - camY;
-      drawDiamondC(cx, topY, 'rgba(255,226,122,0.32)');
-      ctx.font = '10px "Courier New",monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffe27a';
-      ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.strokeText(e.label, cx, topY + HH + 4);
-      ctx.fillStyle = '#ffe27a'; ctx.fillText(e.label, cx, topY + HH + 4);
-    });
+    // 出口/传送点：地面光圈 + 药丸标签（与大地图城镇一致）
+    cur.exits.forEach((e) => { const f = rProj(e.x, e.y); drawPortal(f.cx - camX, f.fy - camY, e.label); });
     // 动态实体
     dynObjs().forEach((o) => { const f = rProj(o.x, o.y); drawEntity(o, f.cx - camX, f.fy - camY); });
     raf = requestAnimationFrame(draw);
@@ -429,11 +438,25 @@
     raf = requestAnimationFrame(draw);
   }
 
-  // —— 大地图（江湖）绘制：相机跟随大图 + 场景入口标签 + 玩家小人 ——
+  // —— 传送点标识（场景出口 & 大地图城镇通用）：地面金色光圈 + 药丸地名 ——
   function rr(x, y, w, h, r) {
     ctx.beginPath();
     ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
     ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+  function drawPortal(cx, cy, label) {
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.beginPath(); ctx.ellipse(cx, cy, 11, 5.5, 0, 0, 7); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,214,100,0.20)'; ctx.beginPath(); ctx.ellipse(cx, cy, 10, 5, 0, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#ffd964'; ctx.beginPath(); ctx.ellipse(cx, cy, 10, 5, 0, 0, 7); ctx.stroke();
+    ctx.font = 'bold 12px "Songti SC","PingFang SC",serif';
+    const bw = ctx.measureText(label).width + 12, bh = 16, bx = cx - bw / 2, by = cy - 27;
+    ctx.fillStyle = 'rgba(24,16,9,0.85)'; rr(bx, by, bw, bh, 4); ctx.fill();
+    ctx.strokeStyle = '#b78a44'; ctx.lineWidth = 1; rr(bx, by, bw, bh, 4); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx - 4, by + bh); ctx.lineTo(cx + 4, by + bh); ctx.lineTo(cx, by + bh + 4); ctx.closePath();
+    ctx.fillStyle = 'rgba(24,16,9,0.85)'; ctx.fill();
+    ctx.fillStyle = '#ffe9b0'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(label, cx, by + bh / 2 + 0.5); ctx.textBaseline = 'alphabetic';
   }
   function drawMainmap() {
     ctx.setTransform(R, 0, 0, R, 0, 0); ctx.imageSmoothingEnabled = true;   // 大地图缩放平滑
@@ -450,19 +473,7 @@
     mapEntrances.forEach((e) => {
       const f = rProj(e.x, e.y), cx = f.cx - camX, cy = f.fy - camY;
       if (cx < -70 || cx > VIEW_W + 70 || cy < -34 || cy > VIEW_H + 20) return;
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.beginPath(); ctx.ellipse(cx, cy, 11, 5.5, 0, 0, 7); ctx.stroke();
-      ctx.fillStyle = 'rgba(255,214,100,0.20)'; ctx.beginPath(); ctx.ellipse(cx, cy, 10, 5, 0, 0, 7); ctx.fill();
-      ctx.strokeStyle = '#ffd964'; ctx.beginPath(); ctx.ellipse(cx, cy, 10, 5, 0, 0, 7); ctx.stroke();
-      const label = e.name;
-      ctx.font = 'bold 12px "Songti SC","PingFang SC",serif';
-      const bw = ctx.measureText(label).width + 12, bh = 16, bx = cx - bw / 2, by = cy - 27;
-      ctx.fillStyle = 'rgba(24,16,9,0.85)'; rr(bx, by, bw, bh, 4); ctx.fill();
-      ctx.strokeStyle = '#b78a44'; ctx.lineWidth = 1; rr(bx, by, bw, bh, 4); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(cx - 4, by + bh); ctx.lineTo(cx + 4, by + bh); ctx.lineTo(cx, by + bh + 4); ctx.closePath();
-      ctx.fillStyle = 'rgba(24,16,9,0.85)'; ctx.fill();
-      ctx.fillStyle = '#ffe9b0'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(label, cx, by + bh / 2 + 0.5); ctx.textBaseline = 'alphabetic';
+      drawPortal(cx, cy, e.name);
     });
     const f = rProj(hero.x, hero.y);
     drawMapPlayer(f.cx - camX, f.fy - camY);
@@ -568,7 +579,7 @@
       if (entSid != null) { S.state.mapX = nx; S.state.mapY = ny; enter(entSid); }   // 走上城镇→进场景
     } else {
       const ex = exitAt(nx, ny);
-      if (ex) enter(ex.to, ex.tx, ex.ty);
+      if (ex) { if (ex.to === 'map') enterMap(ex.tx, ex.ty); else enter(ex.to, ex.tx, ex.ty); }
       else if (cur.real) updateCam();
     }
     refreshBar();
@@ -731,7 +742,11 @@
       x = sp ? sp.x : hero.x; y = sp ? sp.y : hero.y;
     }
     hero.x = x; hero.y = y;
-    if (cur.real) { const p = resolveSpawn(hero.x, hero.y); hero.x = p.x; hero.y = p.y; }
+    if (cur.real) {
+      const p = resolveSpawn(hero.x, hero.y); hero.x = p.x; hero.y = p.y;
+      const c = sceneCentroid();                          // 落点与内容质心不连通(困在孤立小区) → 用质心
+      if (c) { const cw = resolveSpawn(c.x, c.y); if (!connected(hero.x, hero.y, cw.x, cw.y)) { hero.x = cw.x; hero.y = cw.y; } }
+    }
     S.state.x = hero.x; S.state.y = hero.y; S.save();
     layout(); updateCam();
     hint(HINT); refreshBar();

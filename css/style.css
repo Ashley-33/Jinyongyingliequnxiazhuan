@@ -325,3 +325,9 @@ html, body {
   .wm-node span { font-size: 8px; }
   .wm-title { font-size: 16px; letter-spacing: 3px; }
 }
+
+/* 版本号徽标（固定右下，任意界面可见） */
+.game-version { position: fixed; right: 8px; bottom: 6px; z-index: 80;
+  font-size: 11px; color: var(--ink-dim); letter-spacing: 1px;
+  background: rgba(20,14,8,0.55); border: 1px solid var(--border);
+  padding: 1px 7px; border-radius: 8px; pointer-events: none; font-family: "Courier New",monospace; }
