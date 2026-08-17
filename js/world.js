@@ -189,10 +189,12 @@
     for (const id in window.JYSceneMeta) {
       const nid = +id, m = window.JYSceneMeta[id];
       if (SCENES[nid] && SCENES[nid].real) continue;
+      const e = D.scene(nid) && D.scene(nid).enter;                 // 原版入口(EntranceX/Y)
+      const sp = (e && (e.x || e.y)) ? [e.x, e.y] : m.spawn;        // 入口无效才退回旧 spawn
       SCENES[nid] = {
         name: m.name, real: true, img: 'assets/scene/' + id + '.png',
-        spawn: { x: m.spawn[0], y: m.spawn[1] },
-        npcs: [], encounters: [], exits: [],
+        spawn: { x: sp[0], y: sp[1] },
+        npcs: [], encounters: [], exits: [], auto: true,
       };
     }
   }
@@ -267,6 +269,21 @@
     }
     return { x, y };
   }
+  // 可走区质心（自动场景落点：落在内容中间，避免落到边缘空地/图外）
+  function sceneCentroid() {
+    if (!curSD) return null;
+    const SZ = curSD.size; let sx = 0, sy = 0, n = 0;
+    for (let y = 0; y < SZ; y++) for (let x = 0; x < SZ; x++)
+      if (walkableReal(x, y)) { sx += x; sy += y; n++; }
+    return n ? { x: Math.round(sx / n), y: Math.round(sy / n) } : null;
+  }
+  // 进场景落点：优先原版入口；若入口是门(挡)，就落到相邻一格(朝内优先)，别远挪
+  function resolveSpawn(sx, sy) {
+    if (walkableReal(sx, sy)) return { x: sx, y: sy };
+    for (const [dx, dy] of [[0, -1], [-1, 0], [1, 0], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]])
+      if (walkableReal(sx + dx, sy + dy)) return { x: sx + dx, y: sy + dy };
+    return nearestWalkable(sx, sy);       // 彻底被围才远挪
+  }
   function updateCam() {
     if (!curSD) return; const f = rProj(hero.x, hero.y);
     camX = (curSD.iw <= VIEW_W) ? Math.round((curSD.iw - VIEW_W) / 2) : Math.max(0, Math.min(Math.round(f.cx - VIEW_W / 2), curSD.iw - VIEW_W));
@@ -334,9 +351,11 @@
     }
     if (isHero) { ctx.fillStyle = '#ffe27a'; ctx.fillRect(cx - 8, fy - 40, 16, 2); }
     if (label) {
-      ctx.font = '11px "Courier New",monospace'; ctx.textAlign = 'center';
-      ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.strokeText(label, cx, fy - 42);
-      ctx.fillStyle = labelColor || '#e8dcc0'; ctx.fillText(label, cx, fy - 42);
+      ctx.font = 'bold 12px "Songti SC","PingFang SC","Courier New",serif'; ctx.textAlign = 'center';
+      const bw = ctx.measureText(label).width + 10, bh = 15, bx = cx - bw / 2, by = fy - 48;
+      ctx.fillStyle = 'rgba(20,14,8,0.82)'; rr(bx, by, bw, bh, 3); ctx.fill();
+      ctx.fillStyle = labelColor || '#ffe9b0'; ctx.textBaseline = 'middle';
+      ctx.fillText(label, cx, by + bh / 2 + 0.5); ctx.textBaseline = 'alphabetic';
     }
   }
 
@@ -706,9 +725,13 @@
   function enter(sceneId, x, y) {
     walkDirs = []; busy = false;                        // 切场景：清行走队列，复位忙（脚本 teleport 后交给 onEnter 接管）
     S.state.sceneId = sceneId; setCur();
-    if (x == null) { x = cur.spawn ? cur.spawn.x : hero.x; y = cur.spawn ? cur.spawn.y : hero.y; }
+    if (x == null) {
+      let sp = cur.spawn;
+      if (cur.auto) { const c = sceneCentroid(); if (c) sp = c; }   // 自动场景落在可走区质心(内容中间)
+      x = sp ? sp.x : hero.x; y = sp ? sp.y : hero.y;
+    }
     hero.x = x; hero.y = y;
-    if (cur.real && !walkableReal(hero.x, hero.y)) { const p = nearestWalkable(hero.x, hero.y); hero.x = p.x; hero.y = p.y; }
+    if (cur.real) { const p = resolveSpawn(hero.x, hero.y); hero.x = p.x; hero.y = p.y; }
     S.state.x = hero.x; S.state.y = hero.y; S.save();
     layout(); updateCam();
     hint(HINT); refreshBar();
@@ -733,7 +756,7 @@
     hero.x = S.state.x != null ? S.state.x : (cur.spawn ? cur.spawn.x : 4);
     hero.y = S.state.y != null ? S.state.y : (cur.spawn ? cur.spawn.y : 8);
     // 迁移/兜底：真场景若存档位置不可走（老存档或坐标失配），回出生点
-    if (cur.real && !walkableReal(hero.x, hero.y)) { const p = nearestWalkable(hero.x, hero.y); hero.x = p.x; hero.y = p.y; }
+    if (cur.real) { const p = resolveSpawn(hero.x, hero.y); hero.x = p.x; hero.y = p.y; }
     layout(); updateCam();
     active = true; busy = false; walkDirs = [];
     document.addEventListener('keydown', onKey);
