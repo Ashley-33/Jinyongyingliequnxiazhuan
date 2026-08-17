@@ -183,18 +183,56 @@
     },
   };
 
-  // 用 scenemeta 自动补全全部 84 个真场景（手写的 0/8/30/37/54 保留其 NPC/剧情；
-  // 程序占位 1野径/2黑风寨 被真场景 1桃花岛/2码头 覆盖）。大地图按钮负责离开。
+  // 载入期：某场景从「可走质心」洪泛可达的格集合（判断出口/跳转口是否真能走到）
+  function loadRegion(id) {
+    const sd = window.JYScene && window.JYScene[id]; if (!sd) return null;
+    const SZ = sd.size, bl = new Set(sd.blocked), ou = new Set(sd.outside || []);
+    const walk = (x, y) => x >= 0 && y >= 0 && x < SZ && y < SZ && !bl.has(y * SZ + x) && !ou.has(y * SZ + x);
+    let cx = 0, cy = 0, n = 0;
+    for (let y = 0; y < SZ; y++) for (let x = 0; x < SZ; x++) if (walk(x, y)) { cx += x; cy += y; n++; }
+    if (!n) return null;
+    cx = Math.round(cx / n); cy = Math.round(cy / n);
+    const seed = new Set([cy * SZ + cx]), sq = [[cx, cy]];        // 质心不可走→就近找可走格作种子
+    while (!walk(cx, cy) && sq.length) {
+      const [a, b] = sq.shift(); let done = false;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = a + dx, ny = b + dy, k = ny * SZ + nx;
+        if (nx < 0 || ny < 0 || nx >= SZ || ny >= SZ || seed.has(k)) continue;
+        if (walk(nx, ny)) { cx = nx; cy = ny; done = true; break; } seed.add(k); sq.push([nx, ny]);
+      }
+      if (done) break;
+    }
+    if (!walk(cx, cy)) return null;
+    const seen = new Set([cy * SZ + cx]), q = [[cx, cy]];
+    for (let h = 0; h < q.length; h++) { const [a, b] = q[h]; for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = a + dx, ny = b + dy, k = ny * SZ + nx; if (!seen.has(k) && walk(nx, ny)) { seen.add(k); q.push([nx, ny]); } } }
+    return { seen, SZ };
+  }
+  function tileReach(reg, x, y) {   // 传送格自身或相邻是否落在主可走区(走得到)
+    if (!reg) return false;
+    if (reg.seen.has(y * reg.SZ + x)) return true;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (reg.seen.has((y + dy) * reg.SZ + (x + dx))) return true;
+    return false;
+  }
+
+  // 用 scenemeta 自动补全全部 84 个真场景（手写的 0/8/30/37/54 保留其 NPC/剧情）。
+  // 出口/跳转只接「走得到」的（原版边缘出口有些落在图外空地，走不到；那些靠大地图按钮离开）。
   if (window.JYSceneMeta) {
     for (const id in window.JYSceneMeta) {
       const nid = +id, m = window.JYSceneMeta[id];
       if (SCENES[nid] && SCENES[nid].real) continue;
-      const e = D.scene(nid) && D.scene(nid).enter;                 // 原版入口(EntranceX/Y)
-      const sp = (e && (e.x || e.y)) ? [e.x, e.y] : m.spawn;        // 入口无效才退回旧 spawn
+      const sc = D.scene(nid); if (!sc) continue;
+      const sp = (sc.enter.x || sc.enter.y) ? [sc.enter.x, sc.enter.y] : m.spawn;
+      const reg = loadRegion(nid), exits = [];
+      if (sc.main.x || sc.main.y)                                   // 出口格 → 回江湖(本场景所在位置)
+        sc.exits.forEach(([ex, ey]) => { if (tileReach(reg, ex, ey)) exits.push({ x: ex, y: ey, to: 'map', tx: sc.main.x, ty: sc.main.y, label: '离开→江湖' }); });
+      if (sc.jump && tileReach(reg, sc.jump.x, sc.jump.y)) {        // 跳转口 → 另一场景(落目标 JumpReturn)
+        const tgt = D.scene(sc.jump.sub);
+        if (tgt) exits.push({ x: sc.jump.x, y: sc.jump.y, to: sc.jump.sub, tx: tgt.jumpRet.x, ty: tgt.jumpRet.y, label: '→' + tgt.name });
+      }
       SCENES[nid] = {
         name: m.name, real: true, img: 'assets/scene/' + id + '.png',
         spawn: { x: sp[0], y: sp[1] },
-        npcs: [], encounters: [], exits: [], auto: true,
+        npcs: [], encounters: [], exits, auto: true,
       };
     }
   }
@@ -511,6 +549,7 @@
   // 可落脚格：地面可走 且 无 NPC / 未清遭遇（中途不穿人）
   function passableStep(x, y) {
     if (cur.mainmap && mapEntranceAt(x, y) != null) return true;   // 城镇入口格可作寻路目标
+    if (!cur.mainmap && exitAt(x, y)) return true;                 // 场景出口/跳转口可作寻路目标
     if (cur.real) { if (!walkableReal(x, y)) return false; }
     else {
       if (x < 0 || y < 0 || y >= cur.map.length || x >= cur.map[0].length) return false;
@@ -569,7 +608,8 @@
     else if (dy < 0) hero.face = 'up'; else if (dy > 0) hero.face = 'down';
     const nx = hero.x + dx, ny = hero.y + dy;
     const entSid = cur.mainmap ? mapEntranceAt(nx, ny) : null;    // 大地图上的场景入口(城镇图标格)
-    const solid = (entSid != null) ? false : (cur.real ? !walkableReal(nx, ny) : blockedTile(nx, ny));
+    const ex = cur.mainmap ? null : exitAt(nx, ny);              // 场景出口/跳转口(可能落在门格上，允许踏入)
+    const solid = (entSid != null || ex) ? false : (cur.real ? !walkableReal(nx, ny) : blockedTile(nx, ny));
     if (solid) return false;
     const n = npcAt(nx, ny); if (n) { interact(n); return true; }        // 撞到NPC=对话
     const enc = encAt(nx, ny); if (enc) { startEncounter(enc); return true; } // 撞到敌人=开战
@@ -577,11 +617,9 @@
     if (cur.mainmap) {
       updateCam();
       if (entSid != null) { S.state.mapX = nx; S.state.mapY = ny; enter(entSid); }   // 走上城镇→进场景
-    } else {
-      const ex = exitAt(nx, ny);
-      if (ex) { if (ex.to === 'map') enterMap(ex.tx, ex.ty); else enter(ex.to, ex.tx, ex.ty); }
-      else if (cur.real) updateCam();
-    }
+    } else if (ex) {
+      if (ex.to === 'map') enterMap(ex.tx, ex.ty); else enter(ex.to, ex.tx, ex.ty);
+    } else if (cur.real) updateCam();
     refreshBar();
     return true;
   }

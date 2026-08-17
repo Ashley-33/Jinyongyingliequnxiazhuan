@@ -44,6 +44,8 @@
   const S = {
     id: 0, name: 1, exitMusic: 2, enterMusic: 3, jumpScene: 4, enterCond: 5,
     mainX1: 6, mainY1: 7, mainX2: 8, mainY2: 9, entX: 10, entY: 11,
+    exX1: 12, exX2: 13, exX3: 14, exY1: 15, exY2: 16, exY3: 17,
+    jumpX: 18, jumpY: 19, jumpRetX: 20, jumpRetY: 21,
   };
 
   const roles = RAW.roles.rows;
@@ -175,10 +177,17 @@
 
   function makeScene(row) {
     if (!row) return null;
+    const rawEx = [[num(row[S.exX1]), num(row[S.exY1])], [num(row[S.exX2]), num(row[S.exY2])], [num(row[S.exX3]), num(row[S.exY3])]]
+      .filter(([x, y]) => x || y);                               // 出口格(ExitX/Y ×3) → 回大地图
+    const exits = rawEx.filter((e, i) => rawEx.findIndex((o) => o[0] === e[0] && o[1] === e[1]) === i);  // 去重
+    const js = num(row[S.jumpScene]), jx = num(row[S.jumpX]), jy = num(row[S.jumpY]);
     return {
       id: num(row[S.id]), name: (row[S.name] || '').toString().trim(),
       enter: { x: num(row[S.entX]), y: num(row[S.entY]) },        // 进场景落点(EntranceX/Y)
       main: { x: num(row[S.mainX1]), y: num(row[S.mainY1]) },     // 在480大地图上的位置(外景入口)
+      exits,
+      jump: (js >= 0 && (jx || jy)) ? { sub: js, x: jx, y: jy } : null,   // 跳转口(仅坐标有效的;(0,0)是事件驱动)
+      jumpRet: { x: num(row[S.jumpRetX]), y: num(row[S.jumpRetY]) },      // 别的场景跳来时的落点
     };
   }
 
