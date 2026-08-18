@@ -542,7 +542,8 @@
     const W = cur.real ? curSD.size : cur.map[0].length;
     const H = cur.real ? curSD.size : cur.map.length;
     if (tx < 0 || ty < 0 || tx >= W || ty >= H) return null;
-    const interactive = !!(npcAt(tx, ty) || encAt(tx, ty));
+    const evHere = !cur.mainmap && eventAt(tx, ty);
+    const interactive = !!(npcAt(tx, ty) || encAt(tx, ty) || (evHere && evHere.e1 > 0));  // NPC/敌人/原版可对话事件
     if (!interactive && !passableStep(tx, ty)) return null;     // 点到障碍/图外
     const key = (x, y) => y * 256 + x;
     const isGoal = interactive
@@ -835,5 +836,5 @@
   }
   function stop() { active = false; walkDirs = []; cancelAnimationFrame(raf); document.removeEventListener('keydown', onKey); if (canvas) canvas.removeEventListener('click', onClick); $('screen-world').classList.remove('active'); }
 
-  JY.World = { start, pause, resume, stop, enter, enterMap, SCENES, blockInput: (b) => { inputBlocked = !!b; walkDirs = []; }, refresh: () => { if (active) refreshBar(); }, _dbg: () => ({ active, busy, hero: { x: hero.x, y: hero.y }, sceneId: S.state.sceneId, cam: { camX, camY }, real: !!(cur && cur.real), path: walkDirs.length }), _click: (gx, gy) => { const d = bfsDirs(gx, gy); walkDirs = (d && d.length) ? d : []; walkAcc = STEP_FRAMES; return walkDirs.length; }, _move: (dx, dy) => tryMove(dx, dy) };
+  JY.World = { start, pause, resume, stop, enter, enterMap, SCENES, blockInput: (b) => { inputBlocked = !!b; walkDirs = []; }, refresh: () => { if (active) refreshBar(); }, _dbg: () => ({ active, busy, hero: { x: hero.x, y: hero.y }, sceneId: S.state.sceneId, cam: { camX, camY }, real: !!(cur && cur.real), path: walkDirs.length }), _click: (gx, gy) => { const d = bfsDirs(gx, gy); walkDirs = (d && d.length) ? d : []; walkAcc = STEP_FRAMES; return walkDirs.length; }, _move: (dx, dy) => tryMove(dx, dy), _run: () => { let n = 0; while (walkDirs.length && !busy && n++ < 99) { const [dx, dy] = walkDirs.shift(); if (!tryMove(dx, dy)) break; } return n; } };
 })(window);
