@@ -650,7 +650,7 @@
     pause();
     const enemyRoles = (ids || []).map((id) => D.role(id)).filter(Boolean).slice(0, 6);
     if (!enemyRoles.length) { resume(); cb(true); return; }
-    JY.balanceEnemies(S.state.team, enemyRoles);
+    JY.scaleEnemiesForStory(S.state.team, enemyRoles);   // 剧情战按队伍强度缩放(不加强)
     JY.Battle.start({
       playerTeam: S.state.team, enemyTeam: enemyRoles, expEach: Math.round((exp || 0) / Math.max(1, enemyRoles.length)),
       onEnd: (res) => { const report = S.grantBattleRewards(res); resume(); showRewards(res, report, () => cb(res.win)); },

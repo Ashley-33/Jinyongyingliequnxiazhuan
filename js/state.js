@@ -239,4 +239,25 @@
     });
     return enemyRoles;
   };
+
+  // 剧情战缩放：按队伍强度封顶(强敌压下来)，我方人少时整体再压低，武功不拉高——保证任何时候触发都可玩
+  JY.scaleEnemiesForStory = function (playerRoles, enemyRoles) {
+    const ref = { hpMax: 120, atk: 40, def: 30, qg: 25 };
+    playerRoles.forEach((r) => {
+      if (!r) return;
+      ref.hpMax = Math.max(ref.hpMax, r.hpMax); ref.atk = Math.max(ref.atk, r.atk);
+      ref.def = Math.max(ref.def, r.def); ref.qg = Math.max(ref.qg, r.qg);
+    });
+    const pn = playerRoles.filter(Boolean).length, en = enemyRoles.filter(Boolean).length;
+    const crowd = en > pn ? pn / en : 1;                 // 我方人少 → 敌人整体压低
+    enemyRoles.forEach((e) => {
+      if (!e) return;
+      e.hpMax = Math.max(60, Math.round(Math.min(e.hpMax, ref.hpMax) * (0.55 + 0.5 * crowd))); e.hp = e.hpMax;
+      e.atk = Math.max(18, Math.round(Math.min(e.atk, ref.atk) * (0.55 + 0.45 * crowd)));
+      e.def = Math.round(Math.min(e.def, ref.def));
+      e.qg = Math.round(Math.min(e.qg, ref.qg));
+      e.magics.forEach((m) => { if (m.level > 120) m.level = 120; });  // 敌人武功压到≤120，不再拉满
+    });
+    return enemyRoles;
+  };
 })(window);
