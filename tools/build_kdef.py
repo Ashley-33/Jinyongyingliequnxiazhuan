@@ -28,7 +28,19 @@ if os.path.exists(tsf):
     talk = [''.join(t2s.get(c, c) for c in line) for line in talk]
     print(f'繁→简：转换表 {len(t2s)} 字')
 
-out = {'scripts': scripts, 'talk': talk}
+# war.sta：140 场战斗定义(186字节/场)，取敌人阵容(Enemy[20] 在 int16 [33..52]) + 经验
+battles = {}
+wf = os.path.join(RAW, 'war.sta')
+if os.path.exists(wf):
+    wraw = open(wf, 'rb').read()
+    for i in range(len(wraw) // 186):
+        v = struct.unpack('<93h', wraw[i * 186:(i + 1) * 186])
+        enemies = [e for e in v[33:53] if e > 0]
+        if enemies:
+            battles[str(i)] = {'exp': v[7], 'enemies': enemies}
+    print(f'战斗 {len(battles)} 场（有敌人的）')
+
+out = {'scripts': scripts, 'talk': talk, 'battles': battles}
 open(os.path.join(ROOT, 'js/kdefdata.js'), 'w', encoding='utf-8').write(
     'window.JYKdef=' + json.dumps(out, ensure_ascii=False, separators=(',', ':')) + ';')
 print(f'脚本 {len(scripts)} 段 · 对话 {len(talk)} 行 → js/kdefdata.js ({os.path.getsize(os.path.join(ROOT,"js/kdefdata.js"))//1024} KB)')

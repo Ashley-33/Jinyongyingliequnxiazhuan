@@ -255,9 +255,29 @@
     curSD = (cur.real && window.JYScene) ? window.JYScene[S.state.sceneId] : null;
     if (curSD) { blkSet = new Set(curSD.blocked); outSet = new Set(curSD.outside || []); }
     else { blkSet = outSet = null; }
-    // 原版事件(NPC/物件)：载入本场景事件；阻挡格并入障碍集
-    curEvents = (curSD && window.JYNpc && window.JYNpc.scenes[String(S.state.sceneId)]) || [];
+    // 原版事件(NPC/物件)：载入本场景事件(克隆)，套用 modifyEvent 改动；阻挡格并入障碍集
+    const base = (curSD && window.JYNpc && window.JYNpc.scenes[String(S.state.sceneId)]) || [];
+    const mods = S.state.eventMods && S.state.eventMods[S.state.sceneId];
+    curEvents = base.map((e) => { const c = Object.assign({}, e); if (mods && mods[e.i]) Object.assign(c, mods[e.i]); return c; });
     if (blkSet) curEvents.forEach((e) => { if (e.b) blkSet.add(e.y * curSD.size + e.x); });
+  }
+  // modifyEvent：按事件槽位改动(开门/换NPC/移除)，存入 state 持久化，当前场景立即生效
+  function applyModifyEvent(a) {
+    const submap = a[0], slot = a[1];
+    if (submap < 0 || slot < 0) return;
+    const st = S.state;
+    if (!st.eventMods) st.eventMods = {};
+    if (!st.eventMods[submap]) st.eventMods[submap] = {};
+    const m = st.eventMods[submap][slot] || (st.eventMods[submap][slot] = {});
+    if (a[2] !== -2) m.b = a[2] ? 1 : 0;                       // cannotWalk
+    if (a[4] !== -2) m.e1 = a[4];
+    if (a[5] !== -2) m.e2 = a[5];
+    if (a[6] !== -2) m.e3 = a[6];
+    if (a[9] !== -2) m.pic = a[9];                             // BeginPic
+    if (a[11] !== -2) m.x = a[11];
+    if (a[12] !== -2) m.y = a[12];
+    S.save();
+    if (submap === st.sceneId) setCur();
   }
 
   // —— 真场景：格↔像素（大图坐标系）——
@@ -625,13 +645,28 @@
     box.style.display = 'block';
     box.onclick = () => { box.style.display = 'none'; box.onclick = null; cb && cb(); };
   }
+  // 原版战斗(按 war.sta 的敌人阵容)：打完回调 win
+  function runBattleIds(ids, exp, cb) {
+    pause();
+    const enemyRoles = (ids || []).map((id) => D.role(id)).filter(Boolean).slice(0, 6);
+    if (!enemyRoles.length) { resume(); cb(true); return; }
+    JY.balanceEnemies(S.state.team, enemyRoles);
+    JY.Battle.start({
+      playerTeam: S.state.team, enemyTeam: enemyRoles, expEach: Math.round((exp || 0) / Math.max(1, enemyRoles.length)),
+      onEnd: (res) => { const report = S.grantBattleRewards(res); resume(); showRewards(res, report, () => cb(res.win)); },
+    });
+  }
   // kdef VM 的 IO 桥
   const kdefIO = {
     say: (text, head, style, cb) => sayLine(text, head, cb),
-    battle: (bid, exp, cb) => { toast('（原版战斗 #' + bid + ' 暂略）'); cb(true); },   // 战斗数据未接，暂自动过
+    battle: (bid, exp, cb) => {
+      const b = window.JYKdef && window.JYKdef.battles && window.JYKdef.battles[String(bid)];
+      if (!b || !b.enemies || !b.enemies.length) { cb(true); return; }   // 无定义→跳过
+      runBattleIds(b.enemies, b.exp || exp, cb);
+    },
     toast: (msg) => toast(msg),
     refresh: () => refreshBar(),
-    modifyEvent: () => {},                        // 阶段3再实现改事件(开门/换NPC)
+    modifyEvent: (a) => applyModifyEvent(a),
   };
   // 原版事件交互（跑 kdef 脚本：对话/给物/招募/学武/属性/…）
   function interactEvent(ev) {

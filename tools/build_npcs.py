@@ -19,7 +19,7 @@ for s in range(84):
         v = d1[base + e * NF: base + e * NF + NF]
         block, idx, e1, e2, e3, cur, end, beg, delay, x, y = v
         if beg > 0 and (0 <= x < 64) and (0 <= y < 64):        # 有精灵、坐标合法
-            evs.append({'x': x, 'y': y, 'pic': beg, 'e1': e1, 'e2': e2, 'e3': e3, 'b': 1 if block else 0})
+            evs.append({'i': e, 'x': x, 'y': y, 'pic': beg, 'e1': e1, 'e2': e2, 'e3': e3, 'b': 1 if block else 0})  # i=事件槽位(供modifyEvent)
             used.add(beg)
     if evs:
         scenes[str(s)] = evs
