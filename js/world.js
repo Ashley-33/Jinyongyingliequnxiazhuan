@@ -600,7 +600,10 @@
       if (entSid != null) { S.state.mapX = nx; S.state.mapY = ny; enter(entSid); }   // 走上城镇→进场景
     } else if (ex) {
       if (ex.to === 'map') enterMap(ex.tx, ex.ty); else enter(ex.to, ex.tx, ex.ty);
-    } else if (cur.real) updateCam();
+    } else if (cur.real) {
+      updateCam();
+      const ev = eventAt(nx, ny); if (ev && ev.e3 > 0) { busy = true; JY.Kdef.run(ev.e3, kdefIO, () => { busy = false; refreshBar(); }); }  // 踩到触发
+    }
     refreshBar();
     return true;
   }
@@ -613,10 +616,26 @@
     const ev = eventAt(fx, fy); if (ev && ev.e1 > 0) { interactEvent(ev); return; }
     const en = encAt(fx, fy); if (en) startEncounter(en);
   }
-  // 原版事件交互（阶段1占位对话；阶段2接入 talk 原版台词，阶段3跑 kdef 脚本）
+  // 单行对话（带说话人头像）——供 kdef 的 oldTalk 用
+  function sayLine(text, headId, cb) {
+    const box = $('dialog');
+    const hd = (headId != null && headId >= 0) ? `<img class="dhead" src="assets/head/${headId}.png" onerror="this.style.display='none'">` : '';
+    box.innerHTML = hd + `<div class="dtext">${text}</div><div class="dmore">▼ 点击继续</div>`;
+    box.style.display = 'block';
+    box.onclick = () => { box.style.display = 'none'; box.onclick = null; cb && cb(); };
+  }
+  // kdef VM 的 IO 桥
+  const kdefIO = {
+    say: (text, head, style, cb) => sayLine(text, head, cb),
+    battle: (bid, exp, cb) => { toast('（原版战斗 #' + bid + ' 暂略）'); cb(true); },   // 战斗数据未接，暂自动过
+    toast: (msg) => toast(msg),
+    refresh: () => refreshBar(),
+    modifyEvent: () => {},                        // 阶段3再实现改事件(开门/换NPC)
+  };
+  // 原版事件交互（跑 kdef 脚本：对话/给物/招募/学武/属性/…）
   function interactEvent(ev) {
     busy = true;
-    showDialog('', ['……'], () => { busy = false; });
+    JY.Kdef.run(ev.e1, kdefIO, () => { busy = false; refreshBar(); });
   }
 
   // 事件引擎 IO 桥：把脚本步骤接到世界的对话/战斗/切场景/刷新
