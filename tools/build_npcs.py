@@ -18,9 +18,10 @@ for s in range(84):
     for e in range(NEV):
         v = d1[base + e * NF: base + e * NF + NF]
         block, idx, e1, e2, e3, cur, end, beg, delay, x, y = v
-        if beg > 0 and (0 <= x < 64) and (0 <= y < 64):        # 有精灵、坐标合法
+        if (beg > 0 or e1 > 0 or e2 > 0 or e3 > 0) and (0 <= x < 64) and (0 <= y < 64):  # 有精灵或任一触发
             evs.append({'i': e, 'x': x, 'y': y, 'pic': beg, 'e1': e1, 'e2': e2, 'e3': e3, 'b': 1 if block else 0})  # i=事件槽位(供modifyEvent)
-            used.add(beg)
+            if beg > 0:
+                used.add(beg)
     if evs:
         scenes[str(s)] = evs
 

@@ -223,6 +223,7 @@
   let cur = null, canvas = null, ctx = null, raf = 0, active = false;
   let curSD = null, blkSet = null, outSet = null;   // 当前真场景数据/障碍集/边界集
   let curEvents = [];                                // 当前场景原版事件(d1.grp)：NPC/物件/触发
+  let curEventCtx = null;                            // 正在跑脚本的事件上下文{submap,slot}(供 modifyEvent 的-2)
   const npcAtlas = new Image(); npcAtlas.src = 'assets/npc.png';   // 原版事件精灵图集
   const eventAt = (x, y) => curEvents.find((e) => e.x === x && e.y === y);
   let camX = 0, camY = 0;                            // 相机（真场景大图左上角像素）
@@ -262,9 +263,12 @@
     if (blkSet) curEvents.forEach((e) => { if (e.b) blkSet.add(e.y * curSD.size + e.x); });
   }
   // modifyEvent：按事件槽位改动(开门/换NPC/移除)，存入 state 持久化，当前场景立即生效
+  //  submap/slot 为负 → 用当前触发事件的场景/槽位(原版 -2=不指定)
   function applyModifyEvent(a) {
-    const submap = a[0], slot = a[1];
-    if (submap < 0 || slot < 0) return;
+    let submap = a[0], slot = a[1];
+    if (submap < 0) submap = curEventCtx ? curEventCtx.submap : S.state.sceneId;
+    if (slot < 0) slot = curEventCtx ? curEventCtx.slot : -1;
+    if (slot < 0) return;
     const st = S.state;
     if (!st.eventMods) st.eventMods = {};
     if (!st.eventMods[submap]) st.eventMods[submap] = {};
@@ -623,7 +627,7 @@
       if (ex.to === 'map') enterMap(ex.tx, ex.ty); else enter(ex.to, ex.tx, ex.ty);
     } else if (cur.real) {
       updateCam();
-      const ev = eventAt(nx, ny); if (ev && ev.e3 > 0) { busy = true; JY.Kdef.run(ev.e3, kdefIO, () => { busy = false; refreshBar(); }); }  // 踩到触发
+      const ev = eventAt(nx, ny); if (ev && ev.e3 > 0) { busy = true; curEventCtx = { submap: S.state.sceneId, slot: ev.i }; JY.Kdef.run(ev.e3, kdefIO, () => { busy = false; curEventCtx = null; refreshBar(); }); }  // 踩到触发
     }
     refreshBar();
     return true;
@@ -667,11 +671,14 @@
     toast: (msg) => toast(msg),
     refresh: () => refreshBar(),
     modifyEvent: (a) => applyModifyEvent(a),
+    eventBySlot: (slot) => curEvents.find((e) => e.i === slot),         // checkEventID 用：按槽位取当前事件(含改动后的Event1)
+    setScenePos: (x, y) => { if (cur.real && !cur.mainmap) { const p = resolveSpawn(x, y); hero.x = p.x; hero.y = p.y; updateCam(); } },  // 场景内传送
+    setLayer: (submap, layer, x, y, v) => { if (submap === S.state.sceneId && layer === 1 && blkSet && curSD) { const i = y * curSD.size + x; if (v <= 0) blkSet.delete(i); else blkSet.add(i); } },  // 开路/封路(运行时)
   };
   // 原版事件交互（跑 kdef 脚本：对话/给物/招募/学武/属性/…）
   function interactEvent(ev) {
-    busy = true;
-    JY.Kdef.run(ev.e1, kdefIO, () => { busy = false; refreshBar(); });
+    busy = true; curEventCtx = { submap: S.state.sceneId, slot: ev.i };
+    JY.Kdef.run(ev.e1, kdefIO, () => { busy = false; curEventCtx = null; refreshBar(); });
   }
 
   // 事件引擎 IO 桥：把脚本步骤接到世界的对话/战斗/切场景/刷新

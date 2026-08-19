@@ -27,15 +27,16 @@
   const inTeam = (rid) => S.state.team.some((r) => r.id === rid);
 
   // 条件求值：能算的算，算不了的保守默认
-  function evalCond(op, a) {
+  function evalCond(op, a, io) {
     switch (op) {
       case 16: return inTeam(a[0]);
       case 18: case 43: return S.bagCount(a[0]) > 0;
       case 20: return S.state.team.length >= 6;
       case 31: return (S.state.money || 0) >= a[0];
       case 42: return S.state.team.some((r) => r.sex === 1);
+      case 55: { const ev = io.eventBySlot && io.eventBySlot(a[0]); return ev ? ev.e1 === a[1] : false; }  // 事件当前Event1==value(剧情状态)
       case 28: case 29: case 36: return true;    // 道德/攻击/性别检查 → 放行
-      case 4: case 55: case 60: case 61: return false; // 用物/事件态/场景图/十四天书 → 未触发
+      case 4: case 60: case 61: return false;    // 用物/场景图/十四天书 → 未触发
       default: return false;
     }
   }
@@ -58,7 +59,9 @@
       case 37: st.morality = (st.morality || 0) + a[0]; break;
       case 56: st.fame = (st.fame || 0) + a[0]; break;
       case 3: io.modifyEvent(a); break;          // 改事件(开门/换NPC/移除)
-      // 动画/镜头/音乐/场景切换/存档等 → 暂空转（后续按需实现）
+      case 19: io.setScenePos && io.setScenePos(a[0], a[1]); break;   // oldSetScenePosition: 场景内传送玩家
+      case 17: io.setLayer && io.setLayer(a[0], a[1], a[2], a[3], a[4]); break;  // setSubMapLayerData: 改地块(开路/封路)
+      // 39 openSubMap: 我们场景本就开放；动画/镜头/音乐等 → 暂空转（后续按需实现）
     }
   }
 
@@ -87,7 +90,7 @@
         const A = spec[0], args = script.slice(i + 1, i + 1 + A);
         if (spec[1]) {                                             // 条件：真假 → 跳转
           const jt = script[i + 1 + A], jf = script[i + 2 + A];
-          const cond = (op === 5 || op === 9 || op === 11) ? true : evalCond(op, args); // ask* 暂默认是
+          const cond = (op === 5 || op === 9 || op === 11) ? true : evalCond(op, args, io); // ask* 暂默认是
           i += (cond ? jt : jf) + A + 3;
           continue;
         }
