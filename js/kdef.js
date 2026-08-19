@@ -90,7 +90,11 @@
         const A = spec[0], args = script.slice(i + 1, i + 1 + A);
         if (spec[1]) {                                             // 条件：真假 → 跳转
           const jt = script[i + 1 + A], jf = script[i + 2 + A];
-          const cond = (op === 5 || op === 9 || op === 11) ? true : evalCond(op, args, io); // ask* 暂默认是
+          if (op === 5 || op === 9 || op === 11) {                 // ask*：弹是/否让玩家选(异步)
+            const kind = op === 5 ? 'battle' : op === 9 ? 'join' : 'rest';
+            io.ask(kind, (yes) => { i += (yes ? jt : jf) + A + 3; step(); }); return;
+          }
+          const cond = evalCond(op, args, io);
           i += (cond ? jt : jf) + A + 3;
           continue;
         }

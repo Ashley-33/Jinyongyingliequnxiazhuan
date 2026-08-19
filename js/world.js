@@ -649,6 +649,14 @@
     box.style.display = 'block';
     box.onclick = () => { box.style.display = 'none'; box.onclick = null; cb && cb(); };
   }
+  // 是/否选择（供 kdef 的 ask* 指令：是否交手/入队/休息）
+  function askLine(question, cb) {
+    const box = $('dialog');
+    box.onclick = null;
+    box.innerHTML = `<div class="dtext">${question}</div><div class="dask"><button class="dbtn" data-y="1">是</button><button class="dbtn" data-y="0">否</button></div>`;
+    box.style.display = 'block';
+    box.querySelectorAll('.dbtn').forEach((bn) => { bn.onclick = (e) => { e.stopPropagation(); box.style.display = 'none'; cb(bn.dataset.y === '1'); }; });
+  }
   // 原版战斗(按 war.sta 的敌人阵容)：打完回调 win
   function runBattleIds(ids, exp, cb) {
     pause();
@@ -668,6 +676,7 @@
       if (!b || !b.enemies || !b.enemies.length) { cb(true); return; }   // 无定义→跳过
       runBattleIds(b.enemies, b.exp || exp, cb);
     },
+    ask: (kind, cb) => askLine(kind === 'battle' ? '是否与他交手？' : kind === 'join' ? '是否让他入队？' : '是否在此休息？', cb),
     toast: (msg) => toast(msg),
     refresh: () => refreshBar(),
     modifyEvent: (a) => applyModifyEvent(a),
