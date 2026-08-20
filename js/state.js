@@ -11,7 +11,7 @@
     bag: [],             // [{id,count}]
     pages: {},           // {magicId: 已收集页数}
     money: 0,
-    sceneId: 0, x: 25, y: 36,
+    sceneId: 'map', x: 84, y: 93, mapX: 84, mapY: 93,
     flags: {},           // 剧情/招募标记
     cleared: {},         // 已清除的遭遇 "sceneId:encId": true
   };
@@ -29,7 +29,10 @@
     state.team = [freshRole(0)];                       // 主角小虾米
     state.bag = [{ id: 2, count: 3 }, { id: 27, count: 1 }];  // 玉真散×3 + 铁拳套×1
     state.pages = {}; state.money = 100;
-    state.sceneId = 0; state.x = 25; state.y = 36;   // 原版小村真场景出生点（村中土路）
+    // 原版开局：踏入江湖，从胡斐居门口上路（大地图坐标 84,93，中原主大陆，连通 69 处场景）。
+    // 注：原版起点在桃花岛(341,133)靠乘船离岛，本作暂未做船，故落在连通的中原大陆起步。
+    state.sceneId = 'map'; state.x = 84; state.y = 93;
+    state.mapX = 84; state.mapY = 93;
     state.flags = {}; state.cleared = {};
     save();
   }

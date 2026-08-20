@@ -1,11 +1,10 @@
 /* ============================================================
  * world.js —— 江湖世界探索：场景行走 · NPC对话 · 客栈 · 招募 · 遭遇战
  *
- * 两种场景模式：
- *  ① 原版真场景（cur.real）：预渲染大图(assets/scene/<id>.png) + 相机跟随 +
- *     等距人物叠加，碰撞取 window.JYScene[id] 的 blocked/outside（64×64 逻辑格）。
- *  ② 程序场景（ASCII map）：菱形地块即时绘制，保留给尚未拼图的场景(1野径/2黑风寨)。
- *  两者共用同一套 NPC/遭遇/出口/对话/招募/客栈逻辑。
+ * 场景：全部为原版真场景（cur.real）——预渲染大图(assets/scene/<id>.png) + 相机跟随 +
+ *   等距人物叠加，碰撞取 window.JYScene[id] 的 blocked/outside（64×64 逻辑格）。
+ *   84 个场景由 ranger 权威元数据(scenemeta.js)自动填充；江湖大地图(480×480)当作超大真场景。
+ *   （早期的 ASCII 程序场景 drawProc 已无场景引用，留作后备。）
  * ============================================================ */
 (function (global) {
   const JY = global.JY || (global.JY = {});
@@ -40,93 +39,10 @@
   // —— 场景配置 ——
   //  真场景：{ real:true, img, spawn:{x,y}, npcs/encounters/exits 用 64×64 格坐标 }
   //  程序场景：tile map（'.'草 '='路 '#'房墙 'T'树 '~'水）
-  const SCENES = {
-    0: {
-      name: '小村', real: true, img: 'assets/scene/0.png',
-      spawn: { x: 25, y: 36 },
-      onEnter: [
-        { do: 'say', who: '', lines: [
-          '【无量山下 · 小村】',
-          '你为寻访名医来到此地，却听闻近来山中恶匪横行，村民惶惶不安……'] },
-      ],
-      npcs: [
-        { x: 27, y: 43, name: '村民', color: 200, script: [
-          { do: 'if', flag: 'met_villager',
-            then: [{ do: 'say', who: '村民', lines: ['壮士又来啦。山里的匪徒一日不除，我们一日不得安生。'] }],
-            else: [
-              { do: 'say', who: '村民', lines: ['这里是无量山下的小村。', '近来山里出了恶匪，壮士千万小心。', '这两瓶伤药你拿着，路上防身。'] },
-              { do: 'give', item: 2, count: 2 },
-              { do: 'flag', key: 'met_villager' },
-            ] },
-        ] },
-        { x: 34, y: 27, name: '客栈掌柜', color: 40, type: 'inn', script: [
-          { do: 'say', who: '客栈掌柜', lines: ['客官打尖还是住店？', '（歇息片刻，生命内力已复原！）'] },
-          { do: 'heal' },
-        ] },
-        { x: 16, y: 34, name: '袁承志', color: 140, type: 'recruit', roleName: '袁承志', script: [
-          { do: 'if', flag: 'recruited_袁承志',
-            then: [{ do: 'say', who: '袁承志', lines: ['同行仗义，正当其时！'] }],
-            else: [
-              { do: 'say', who: '袁承志', lines: ['在下袁承志，也欲除去山中恶匪。', '既是同道，愿与壮士同行！'] },
-              { do: 'recruit', role: '袁承志' },
-            ] },
-        ] },
-      ],
-      encounters: [],
-      exits: [{ x: 25, y: 61, to: 'map', tx: 407, ty: 354, label: '出村→江湖' }],   // 村口通江湖(无量山脚一带)
-    },
-    // 场景 8/30/37/54 曾被手写为错误名字（天龙寺/衡阳城/华山派/武当派，来自 151 版元数据），
-    // 实为 大轮寺/平一指居/五毒教/薛慕华居。现由 ranger 权威元数据自动填充，不再手写。
-    1: {
-      name: '村口野径', w: 15, h: 12,
-      map: [
-        '######...######',
-        '#.....===.....#',
-        '#..T..===..T..#',
-        '#.....===.....#',
-        '#.TT..===..TT.#',
-        '#.....===.....#',
-        '#.............#',
-        '#.....===.....#',
-        '#..T.......T..#',
-        '#.....===.....#',
-        '#.............#',
-        '######...######',
-      ],
-      npcs: [{ x: 2, y: 6, name: '樵夫', color: 30, lines: ['前面林子里常有山贼出没。', '再往南便是黑风寨了。'] }],
-      encounters: [
-        { id: 'a', x: 7, y: 5, name: '山贼', team: ['田伯光'], exp: 60 },
-        { id: 'b', x: 7, y: 9, name: '毛贼', team: ['欧阳克'], exp: 70 },
-      ],
-      exits: [
-        { x: 7, y: 0, to: 0, tx: 25, ty: 58, label: '回村↑' },
-        { x: 7, y: 11, to: 2, tx: 7, ty: 1, label: '黑风寨↓' },
-      ],
-    },
-    2: {
-      name: '黑风寨', w: 15, h: 12,
-      map: [
-        '######...######',
-        '#.....===.....#',
-        '#..#..===..#..#',
-        '#..#..===..#..#',
-        '#.....===.....#',
-        '#.T.......T...#',
-        '#.....===.....#',
-        '#.....===.....#',
-        '#..#.......#..#',
-        '#.....===.....#',
-        '#.....T.T.....#',
-        '###############',
-      ],
-      npcs: [{ x: 4, y: 8, name: '被困村女', color: 320, type: 'talk', lines: ['多谢壮士相救！', '寨主武功高强，务必小心！'] }],
-      encounters: [
-        { id: 'guard', x: 7, y: 5, name: '寨丁', team: ['西门吹雪'], exp: 90 },
-        { id: 'boss', x: 7, y: 8, name: '寨主', team: ['慕容复', '李莫愁'], exp: 200, boss: true },
-      ],
-      exits: [{ x: 7, y: 0, to: 1, tx: 7, ty: 10, label: '离寨↑' }],
-    },
-  };
+  // 全部 84 场景由 ranger 权威元数据(scenemeta.js)在下方循环里自动填充。
+  // 早期这里手写过 小村 / 村口野径 / 黑风寨 教学关，以及 8/30/37/54 错名空壳，
+  // 现已全部退役——开局即原版真江湖：场景名、入口、NPC、宝箱、剧情都来自原版数据。
+  const SCENES = {};
 
   // 载入期：某场景从「可走质心」洪泛可达的格集合（判断出口/跳转口是否真能走到）
   function loadRegion(id) {
@@ -184,7 +100,15 @@
 
   // —— 大地图（江湖）伪场景：480×480 原版大地图当成超大真场景走，走到外景入口进场景 ——
   const MAINMAP_ID = 'map';
-  const MAINMAP = { name: '江湖', real: true, mainmap: true, img: 'assets/mainmap.png', npcs: [], encounters: [], exits: [], spawn: { x: 240, y: 240 } };
+  const MAINMAP = {
+    name: '江湖', real: true, mainmap: true, img: 'assets/mainmap.png', npcs: [], encounters: [], exits: [], spawn: { x: 240, y: 240 },
+    onEnter: [{ do: 'say', who: '', lines: [
+      '一觉醒来，你已置身于这个刀光剑影的江湖。',
+      '传闻天下散落着「十四天书」，得之者可称雄武林。',
+      '就从脚下这条路开始，去闯荡一番吧——走上城镇或门派即可进入。',
+    ] }],
+  };
+  SCENES[MAINMAP_ID] = MAINMAP;   // 供 fireOnEnter 找到大地图的开场白（仅新游戏首次触发）
   const mapEntrances = [];          // [{x,y,id,name}] 画标签用
   const mapEntranceLookup = {};     // cellIdx(y*480+x) → 场景id
   (function () {
@@ -730,7 +654,7 @@
         resume();
         showRewards(res, report, () => {
           busy = false;
-          if (!res.win) { S.healAll(); const sp = SCENES[0].spawn; enter(0, sp.x, sp.y); }
+          if (!res.win) { S.healAll(); enterMap(); }   // 战败：疗伤后退回江湖(上次大地图位置)
         });
       },
     });
@@ -759,7 +683,7 @@
       if (report.levelUps.length) html += '<br>' + report.levelUps.map((u) => `${u.name} 升至 Lv${u.level}！`).join('<br>');
       if (report.pages.length) html += '<br>' + report.pages.map((p) => `拾得残页《${p.name}》(${p.count}/${p.need})`).join('<br>');
       if (report.learned.length) html += '<br>' + report.learned.map((l) => `★ ${l.who} 领悟【${l.magic}】！`).join('<br>');
-    } else html += '技不如人，退回小村疗伤。';
+    } else html += '技不如人，疗伤后退回江湖。';
     html += '</div><div class="dmore">▼ 点击继续</div>';
     box.innerHTML = html; box.style.display = 'block';
     box.onclick = () => { box.style.display = 'none'; box.onclick = null; done && done(); };
