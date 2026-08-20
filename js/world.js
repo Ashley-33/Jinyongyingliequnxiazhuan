@@ -219,6 +219,31 @@
       if (walkableReal(x, y)) { sx += x; sy += y; n++; }
     return n ? { x: Math.round(sx / n), y: Math.round(sy / n) } : null;
   }
+  // 场景「内容锚点」：能走到 NPC/事件所在的一个可走格。无事件时退回全图质心。
+  function contentAnchor() {
+    if (!curEvents || !curEvents.length) return sceneCentroid();
+    let sx = 0, sy = 0, n = 0;
+    for (const e of curEvents) { sx += e.x; sy += e.y; n++; }
+    return resolveSpawn(Math.round(sx / n), Math.round(sy / n));   // 事件群质心 → 就近可走格
+  }
+  // 从 (x,y) 洪泛能否走到「任一事件」相邻格（判断落点是否落在与内容完全不通的空地/别的房间）
+  function reachesAnyEvent(x, y) {
+    if (!curEvents || !curEvents.length || !curSD) return true;
+    if (!walkableReal(x, y)) return false;
+    const SZ = curSD.size, evAdj = new Set();
+    for (const e of curEvents) for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) evAdj.add((e.y + dy) * SZ + (e.x + dx));
+    const seen = new Set([y * SZ + x]), q = [[x, y]];
+    for (let h = 0; h < q.length; h++) {
+      const [cx, cy] = q[h];
+      if (evAdj.has(cy * SZ + cx)) return true;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = cx + dx, ny = cy + dy, k = ny * SZ + nx;
+        if (nx < 0 || ny < 0 || nx >= SZ || ny >= SZ || seen.has(k) || !walkableReal(nx, ny)) continue;
+        seen.add(k); q.push([nx, ny]);
+      }
+    }
+    return false;
+  }
   // 进场景落点：优先原版入口；若入口是门(挡)，就落到相邻一格(朝内优先)，别远挪
   function resolveSpawn(sx, sy) {
     if (walkableReal(sx, sy)) return { x: sx, y: sy };
@@ -795,16 +820,16 @@
   function enter(sceneId, x, y) {
     walkDirs = []; busy = false;                        // 切场景：清行走队列，复位忙（脚本 teleport 后交给 onEnter 接管）
     S.state.sceneId = sceneId; setCur();
-    if (x == null) {
-      let sp = cur.spawn;
-      if (cur.auto) { const c = sceneCentroid(); if (c) sp = c; }   // 自动场景落在可走区质心(内容中间)
-      x = sp ? sp.x : hero.x; y = sp ? sp.y : hero.y;
-    }
-    hero.x = x; hero.y = y;
-    if (cur.real) {
-      const p = resolveSpawn(hero.x, hero.y); hero.x = p.x; hero.y = p.y;
-      const c = sceneCentroid();                          // 落点与内容质心不连通(困在孤立小区) → 用质心
-      if (c) { const cw = resolveSpawn(c.x, c.y); if (!connected(hero.x, hero.y, cw.x, cw.y)) { hero.x = cw.x; hero.y = cw.y; } }
+    if (x != null) {
+      hero.x = x; hero.y = y;
+      if (cur.real) { const p = resolveSpawn(hero.x, hero.y); hero.x = p.x; hero.y = p.y; }
+    } else {
+      // 默认落点：优先原版入口(ranger 入口)；若入口那块走不到场景内容(事件)，改落到内容处。
+      const sp = cur.spawn || { x: hero.x, y: hero.y };
+      const p = resolveSpawn(sp.x, sp.y); hero.x = p.x; hero.y = p.y;
+      if (cur.real && !reachesAnyEvent(hero.x, hero.y)) {           // 入口一个事件都够不着(完全落错区)才改落到内容
+        const a = contentAnchor(); if (a) { hero.x = a.x; hero.y = a.y; }
+      }
     }
     S.state.x = hero.x; S.state.y = hero.y; S.save();
     layout(); updateCam();
