@@ -75,30 +75,8 @@
       encounters: [],
       exits: [{ x: 25, y: 61, to: 'map', tx: 407, ty: 354, label: '出村→江湖' }],   // 村口通江湖(无量山脚一带)
     },
-    30: {
-      name: '衡阳城', real: true, img: 'assets/scene/30.png',
-      spawn: { x: 26, y: 26 },
-      onEnter: [{ do: 'say', who: '', lines: ['【衡阳城】', '街市喧闹，武林中人往来其间。'] }],
-      npcs: [], encounters: [], exits: [],
-    },
-    8: {
-      name: '天龙寺', real: true, img: 'assets/scene/8.png',
-      spawn: { x: 30, y: 43 },
-      onEnter: [{ do: 'say', who: '', lines: ['【大理 · 天龙寺】', '梵音阵阵，池水澄澈。'] }],
-      npcs: [], encounters: [], exits: [],
-    },
-    37: {
-      name: '华山派', real: true, img: 'assets/scene/37.png',
-      spawn: { x: 29, y: 28 },
-      onEnter: [{ do: 'say', who: '', lines: ['【华山派】', '剑气纵横，气象森然。'] }],
-      npcs: [], encounters: [], exits: [],
-    },
-    54: {
-      name: '武当派', real: true, img: 'assets/scene/54.png',
-      spawn: { x: 29, y: 28 },
-      onEnter: [{ do: 'say', who: '', lines: ['【武当派】', '道家清静，紫气东来。'] }],
-      npcs: [], encounters: [], exits: [],
-    },
+    // 场景 8/30/37/54 曾被手写为错误名字（天龙寺/衡阳城/华山派/武当派，来自 151 版元数据），
+    // 实为 大轮寺/平一指居/五毒教/薛慕华居。现由 ranger 权威元数据自动填充，不再手写。
     1: {
       name: '村口野径', w: 15, h: 12,
       map: [
@@ -214,7 +192,8 @@
     for (const id in meta) {
       const m = meta[id];
       if (!(m.mapx > 0 || m.mapy > 0)) continue;     // 只有外景入口(江湖上有位置)的场景才是大地图入口
-      mapEntrances.push({ x: m.mapx, y: m.mapy, id: +id, name: m.name });
+      const shownName = (SCENES[+id] && SCENES[+id].name) || m.name;  // 标签=实际进入后显示的场景名
+      mapEntrances.push({ x: m.mapx, y: m.mapy, id: +id, name: shownName });
       mapEntranceLookup[m.mapy * 480 + m.mapx] = +id;
     }
   })();
