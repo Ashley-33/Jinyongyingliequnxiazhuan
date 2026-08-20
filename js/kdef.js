@@ -37,7 +37,8 @@
       case 55: { const ev = io.eventBySlot && io.eventBySlot(a[0]); return ev ? ev.e1 === a[1] : false; }  // 事件当前Event1==value(剧情状态)
       case 28: case 29: case 36: return true;    // 道德/攻击/性别检查 → 放行
       case 4: return io.usingItem === a[0];      // isUsingItem：当前是否正用该物品触发本事件(Event2)
-      case 60: case 61: return false;            // 场景图/十四天书 → 未触发
+      case 61: return io.check14Books ? io.check14Books() : false;   // 十四天书是否已全部摆上祭坛
+      case 60: return false;                     // 场景图检查 → 未触发
       default: return false;
     }
   }
@@ -62,6 +63,9 @@
       case 3: io.modifyEvent(a); break;          // 改事件(开门/换NPC/移除)
       case 19: io.setScenePos && io.setScenePos(a[0], a[1]); break;   // oldSetScenePosition: 场景内传送玩家
       case 17: io.setLayer && io.setLayer(a[0], a[1], a[2], a[3], a[4]); break;  // setSubMapLayerData: 改地块(开路/封路)
+      case 57: io.toast('轰隆——石门应声而开！'); break;                // breakStoneGate 破石门(原版是开门动画)
+      case 58: io.fightForTop && io.fightForTop(); break;             // fightForTop 武林大会 → 武林盟主结局
+      case 62: io.ending && io.ending('home'); break;                // backHome 十四天书集齐 → 回家结局
       // 39 openSubMap: 我们场景本就开放；动画/镜头/音乐等 → 暂空转（后续按需实现）
     }
   }

@@ -602,7 +602,25 @@
     eventBySlot: (slot) => curEvents.find((e) => e.i === slot),         // checkEventID 用：按槽位取当前事件(含改动后的Event1)
     setScenePos: (x, y) => { if (cur.real && !cur.mainmap) { const p = resolveSpawn(x, y); hero.x = p.x; hero.y = p.y; updateCam(); } },  // 场景内传送
     setLayer: (submap, layer, x, y, v) => { if (submap === S.state.sceneId && layer === 1 && blkSet && curSD) { const i = y * curSD.size + x; if (v <= 0) blkSet.delete(i); else blkSet.add(i); } },  // 开路/封路(运行时)
+    check14Books: () => {                       // 十四天书是否已全部摆上祭坛(本场景事件11-24 的 pic 均为 4664)
+      for (let slot = 11; slot <= 24; slot++) { const e = curEvents.find((x) => x.i === slot); if (!e || e.pic !== 4664) return false; }
+      return true;
+    },
+    fightForTop: () => endGame('top'),          // 武林大会：力压群雄 → 武林盟主结局
+    ending: (kind) => endGame(kind),            // 通关结局(home=集齐天书回家 / top=武林盟主)
   };
+  // —— 通关结局 ——
+  function endGame(kind) {
+    const lines = kind === 'top'
+      ? ['你在武林大会上力压群雄，武功震古烁今，', '终成一代武林盟主，威名传遍大江南北！', '', '——  通  关  ·  武 林 盟 主  ——']
+      : ['集齐十四天书，圣堂机关轰然开启。', '你踏入那台奇异的机器，眼前一阵目眩……', '再睁眼时，已回到自己家中，方知一切恍如大梦。', '', '——  通  关  ·  回  家  ——'];
+    busy = true;
+    showDialog('', lines, () => {
+      S.save(); stop();
+      document.querySelectorAll('.screen').forEach((s) => s.classList.remove('active'));
+      const t = $('screen-title'); if (t) t.classList.add('active');
+    });
+  }
   // 原版事件交互（跑 kdef 脚本：对话/给物/招募/学武/属性/…）
   function interactEvent(ev) {
     busy = true; curEventCtx = { submap: S.state.sceneId, slot: ev.i };
