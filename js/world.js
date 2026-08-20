@@ -608,6 +608,30 @@
     busy = true; curEventCtx = { submap: S.state.sceneId, slot: ev.i };
     JY.Kdef.run(ev.e1, kdefIO, () => { busy = false; curEventCtx = null; refreshBar(); });
   }
+  // —— 对面前的 NPC/物件「使用物品」(原版 Event2)：选背包物品 → 触发该事件的 Event2 脚本 ——
+  function frontEvent() {
+    const dirs = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] };
+    const d = dirs[hero.face] || [0, 1];
+    return eventAt(hero.x + d[0], hero.y + d[1]);
+  }
+  function useItemOnFront(itemId) {
+    const ev = frontEvent();
+    if (!ev || !(ev.e2 > 0)) { toast('对这里用它，没什么反应。'); return; }
+    busy = true; curEventCtx = { submap: S.state.sceneId, slot: ev.i };
+    JY.Kdef.run(ev.e2, Object.assign({ usingItem: itemId }, kdefIO), () => { busy = false; curEventCtx = null; refreshBar(); });  // usingItem 让 op4 isUsingItem 成立
+  }
+  function openUsePicker() {
+    if (busy || (cur && cur.mainmap)) return;
+    const ev = frontEvent();
+    if (!ev || !(ev.e2 > 0)) { toast('面前没有能用物品的对象。'); return; }
+    const bag = S.state.bag || [];
+    if (!bag.length) { toast('行囊空空，没有可用的东西。'); return; }
+    const box = $('dialog'); box.onclick = null;
+    const btns = bag.map((b) => { const it = D.item(b.id); return `<button class="dbtn" data-id="${b.id}">${(it && it.name) || '物品'}${b.count > 1 ? '×' + b.count : ''}</button>`; }).join('');
+    box.innerHTML = `<div class="dtext">对面前用什么？</div><div class="dask">${btns}<button class="dbtn" data-id="-1">算了</button></div>`;
+    box.style.display = 'block';
+    box.querySelectorAll('.dbtn').forEach((el) => { el.onclick = () => { const id = +el.dataset.id; box.style.display = 'none'; box.innerHTML = ''; if (id >= 0) useItemOnFront(id); }; });
+  }
 
   // 事件引擎 IO 桥：把脚本步骤接到世界的对话/战斗/切场景/刷新
   const evtIO = {
@@ -718,6 +742,7 @@
     else if (k === 'ArrowLeft' || k === 'a') { walkDirs = []; tryMove(-1, 0); }
     else if (k === 'ArrowRight' || k === 'd') { walkDirs = []; tryMove(1, 0); }
     else if (k === ' ' || k === 'Enter') interactFront();
+    else if (k === 'u' || k === 'U') openUsePicker();     // 对面前 NPC/物件 使用物品(原版 Event2)
     else return;
     e.preventDefault();
   }
@@ -747,7 +772,7 @@
     }
   }
 
-  const HINT = '方向键/WASD 或点击地面自动寻路，撞向人物对话、撞向敌人开战';
+  const HINT = '方向键/WASD 或点击地面自动寻路，撞向人物对话、撞向敌人开战，按 U 对面前用物品';
 
   function enter(sceneId, x, y) {
     walkDirs = []; busy = false;                        // 切场景：清行走队列，复位忙（脚本 teleport 后交给 onEnter 接管）
@@ -806,5 +831,5 @@
   }
   function stop() { active = false; walkDirs = []; cancelAnimationFrame(raf); document.removeEventListener('keydown', onKey); if (canvas) canvas.removeEventListener('click', onClick); $('screen-world').classList.remove('active'); }
 
-  JY.World = { start, pause, resume, stop, enter, enterMap, SCENES, blockInput: (b) => { inputBlocked = !!b; walkDirs = []; }, refresh: () => { if (active) refreshBar(); }, _dbg: () => ({ active, busy, hero: { x: hero.x, y: hero.y }, sceneId: S.state.sceneId, cam: { camX, camY }, real: !!(cur && cur.real), path: walkDirs.length }), _click: (gx, gy) => { const d = bfsDirs(gx, gy); walkDirs = (d && d.length) ? d : []; walkAcc = STEP_FRAMES; return walkDirs.length; }, _move: (dx, dy) => tryMove(dx, dy), _run: () => { let n = 0; while (walkDirs.length && !busy && n++ < 99) { const [dx, dy] = walkDirs.shift(); if (!tryMove(dx, dy)) break; } return n; } };
+  JY.World = { start, pause, resume, stop, enter, enterMap, SCENES, blockInput: (b) => { inputBlocked = !!b; walkDirs = []; }, refresh: () => { if (active) refreshBar(); }, _dbg: () => ({ active, busy, hero: { x: hero.x, y: hero.y }, sceneId: S.state.sceneId, cam: { camX, camY }, real: !!(cur && cur.real), path: walkDirs.length }), _click: (gx, gy) => { const d = bfsDirs(gx, gy); walkDirs = (d && d.length) ? d : []; walkAcc = STEP_FRAMES; return walkDirs.length; }, _move: (dx, dy) => tryMove(dx, dy), _run: () => { let n = 0; while (walkDirs.length && !busy && n++ < 99) { const [dx, dy] = walkDirs.shift(); if (!tryMove(dx, dy)) break; } return n; }, _face: (f) => { hero.face = f; }, _use: (id) => useItemOnFront(id) };
 })(window);

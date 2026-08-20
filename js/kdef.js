@@ -36,7 +36,8 @@
       case 42: return S.state.team.some((r) => r.sex === 1);
       case 55: { const ev = io.eventBySlot && io.eventBySlot(a[0]); return ev ? ev.e1 === a[1] : false; }  // 事件当前Event1==value(剧情状态)
       case 28: case 29: case 36: return true;    // 道德/攻击/性别检查 → 放行
-      case 4: case 60: case 61: return false;    // 用物/场景图/十四天书 → 未触发
+      case 4: return io.usingItem === a[0];      // isUsingItem：当前是否正用该物品触发本事件(Event2)
+      case 60: case 61: return false;            // 场景图/十四天书 → 未触发
       default: return false;
     }
   }
