@@ -52,13 +52,16 @@ water = lambda n: (179 <= n <= 181) or (253 <= n <= 335) or (508 <= n <= 511)
 OX = SZ * HW
 IW, IH = SZ*2*HW, SZ*2*HH
 canvas = Image.new('RGBA', (IW, IH), (10, 10, 20, 255))
-blocked = []; cnt = 0
+blocked = []; water_cells = []; cnt = 0
 for y in range(SZ):
     for x in range(SZ):
         sx = (x - y) * HW + OX; sy = (x + y) * HH
         e = L(earth, x, y)
-        if e <= 0 or water(e // 2) or (0 < L(bld, x, y) < 9999):
+        is_water = e > 0 and water(e // 2)                       # 真水面（可行船）；e<=0 是图外空，不算
+        if e <= 0 or is_water or (0 < L(bld, x, y) < 9999):
             blocked.append(y * SZ + x)
+        if is_water and not (0 < L(bld, x, y) < 9999):           # 水且非建筑 → 可行船格
+            water_cells.append(y * SZ + x)
         for a in (earth, surf, bld):
             v = L(a, x, y)
             if v <= 0: continue
@@ -71,6 +74,6 @@ ov.convert('RGB').save(OUT_IMG)
 # JYMainMap 用“行走用图”的坐标系（已 ÷DOWN），投影 rProj 直接落到该图像素
 open(OUT_JS, 'w').write('window.JYMainMap=%s;' % json.dumps(
     {'size': SZ, 'hw': HW / DOWN, 'hh': HH / DOWN, 'ox': OX // DOWN, 'oy': 0,
-     'iw': IW // DOWN, 'ih': IH // DOWN, 'blocked': blocked},
+     'iw': IW // DOWN, 'ih': IH // DOWN, 'blocked': blocked, 'water': water_cells},
     separators=(',', ':')))
-print(f'合成瓦片 {cnt} · 总览图 {ov.size} → {OUT_IMG} · 可走性 blocked={len(blocked)} → {OUT_JS}')
+print(f'合成瓦片 {cnt} · 总览图 {ov.size} → {OUT_IMG} · blocked={len(blocked)} · water={len(water_cells)} → {OUT_JS}')

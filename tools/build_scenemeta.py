@@ -37,11 +37,19 @@ s0, s1, REC = idx[2], idx[3], 62
 n = (s1 - s0) // REC
 assert n == 84, f'场景数应为 84，实际 {n}（ranger 版本不符？）'
 
+# 少数场景 ranger 名与本项目 d1 事件内容不符（我方 d1 与 legend 版有细微差异）。
+# 以「玩家实际看到的 NPC 自报家门」为准覆盖，避免门牌与屋里人对不上：
+NAME_OVERRIDE = {
+    37: '回疆',    # 内容：回族圣物可兰经/麦加（ranger 误标五毒教，五毒教其实是 71）
+    69: '铁掌帮',  # 内容：裘千丈「擅闯我铁掌山…铁掌帮」猴爪山（ranger 误标白驼山）
+    71: '五毒教',  # 内容：NPC「跑到我五毒教来」（ranger 误标神龙教）
+}
+
 scenes = []
 for i in range(n):
     o = s0 + i * REC
     name_raw = grp[o + 2: o + 22].split(b'\x00')[0].decode('utf-8', 'ignore').strip()
-    name = simp(name_raw) or f'场景{i}'
+    name = NAME_OVERRIDE.get(i) or simp(name_raw) or f'场景{i}'
     f = struct.unpack('<20h', grp[o + 22: o + 62])
     # scenes.json 行格式(22列)：[id, name, f0..f19]
     scenes.append([i, name] + list(f))

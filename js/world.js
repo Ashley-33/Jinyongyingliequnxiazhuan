@@ -125,6 +125,8 @@
 
   let cur = null, canvas = null, ctx = null, raf = 0, active = false;
   let curSD = null, blkSet = null, outSet = null;   // 当前真场景数据/障碍集/边界集
+  let mainmapWater = null, onBoat = false;          // 大地图水面集合 + 是否在船上（靠岸自动上/下船）
+  const mapWater = (x, y) => !!(mainmapWater && mainmapWater.has(y * curSD.size + x));   // 大地图该格是否水面
   let curEvents = [];                                // 当前场景原版事件(d1.grp)：NPC/物件/触发
   let curEventCtx = null;                            // 正在跑脚本的事件上下文{submap,slot}(供 modifyEvent 的-2)
   const npcAtlas = new Image(); npcAtlas.src = 'assets/npc.png';   // 原版事件精灵图集
@@ -153,6 +155,8 @@
     if (S.state.sceneId === MAINMAP_ID) {
       cur = MAINMAP; curSD = window.JYMainMap;
       blkSet = new Set(curSD.blocked); outSet = new Set();
+      if (!mainmapWater) mainmapWater = new Set(curSD.water || []);
+      onBoat = !!S.state.onBoat;                       // 恢复行船状态
       return;
     }
     cur = scene();
@@ -427,6 +431,11 @@
   function drawMapPlayer(cx, cy) {
     ctx.save();
     ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.beginPath(); ctx.ellipse(cx, cy, 5, 2.5, 0, 0, 7); ctx.fill();
+    if (onBoat) {                                   // 行船：脚下画一叶小舟
+      ctx.fillStyle = '#8a5a2b'; ctx.strokeStyle = '#5a3a1a'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(cx - 8, cy - 2); ctx.lineTo(cx + 8, cy - 2);
+      ctx.lineTo(cx + 5, cy + 3); ctx.lineTo(cx - 5, cy + 3); ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.fillStyle = '#d24b4b';
     ctx.beginPath(); ctx.moveTo(cx - 4, cy - 2); ctx.lineTo(cx + 4, cy - 2); ctx.lineTo(cx + 3, cy - 11); ctx.lineTo(cx - 3, cy - 11); ctx.closePath(); ctx.fill(); ctx.stroke();
     ctx.fillStyle = '#f0c89a'; ctx.beginPath(); ctx.arc(cx, cy - 14, 3.5, 0, 7); ctx.fill(); ctx.stroke();
@@ -455,7 +464,10 @@
   // —— 点击自动寻路 ——
   // 可落脚格：地面可走 且 无 NPC / 未清遭遇（中途不穿人）
   function passableStep(x, y) {
-    if (cur.mainmap && mapEntranceAt(x, y) != null) return true;   // 城镇入口格可作寻路目标
+    if (cur.mainmap) {
+      if (mapEntranceAt(x, y) != null) return true;                // 城镇入口格可作寻路目标
+      return (walkableReal(x, y) || mapWater(x, y)) && !npcAt(x, y) && !encAt(x, y);  // 陆地或水面(行船)皆可寻路
+    }
     if (!cur.mainmap && exitAt(x, y)) return true;                 // 场景出口/跳转口可作寻路目标
     if (cur.real) { if (!walkableReal(x, y)) return false; }
     else {
@@ -472,7 +484,7 @@
     const evHere = !cur.mainmap && eventAt(tx, ty);
     const interactive = !!(npcAt(tx, ty) || encAt(tx, ty) || (evHere && evHere.e1 > 0));  // NPC/敌人/原版可对话事件
     if (!interactive && !passableStep(tx, ty)) return null;     // 点到障碍/图外
-    const key = (x, y) => y * 256 + x;
+    const key = (x, y) => y * 1024 + x;   // 大地图 480 宽，须 >480 避免东半部(x≥256)坐标 key 冲突
     const isGoal = interactive
       ? (x, y) => (Math.abs(x - tx) + Math.abs(y - ty) === 1)   // 相邻即到
       : (x, y) => (x === tx && y === ty);
@@ -518,12 +530,16 @@
     if (cur.real && !cur.mainmap) { const ev = eventAt(nx, ny); if (ev && ev.e1 > 0) { interactEvent(ev); return true; } } // 撞原版NPC=对话
     const entSid = cur.mainmap ? mapEntranceAt(nx, ny) : null;    // 大地图上的场景入口(城镇图标格)
     const ex = cur.mainmap ? null : exitAt(nx, ny);              // 场景出口/跳转口(可能落在门格上，允许踏入)
-    const solid = (entSid != null || ex) ? false : (cur.real ? !walkableReal(nx, ny) : blockedTile(nx, ny));
+    let solid;
+    if (cur.mainmap) solid = (entSid != null) ? false : !(walkableReal(nx, ny) || mapWater(nx, ny));  // 陆地或水面可行(水面=行船)
+    else solid = ex ? false : (cur.real ? !walkableReal(nx, ny) : blockedTile(nx, ny));
     if (solid) return false;
     const n = npcAt(nx, ny); if (n) { interact(n); return true; }        // 撞到NPC=对话
     const enc = encAt(nx, ny); if (enc) { startEncounter(enc); return true; } // 撞到敌人=开战
     hero.x = nx; hero.y = ny;
     if (cur.mainmap) {
+      const sea = mapWater(nx, ny);                 // 进水面→上船；上岸→下船（靠岸自动切换）
+      if (sea !== onBoat) { onBoat = sea; S.state.onBoat = sea; if (sea) hint('⛵ 已登船，可在水面航行；驶回岸边即上岸'); }
       updateCam();
       if (entSid != null) { S.state.mapX = nx; S.state.mapY = ny; enter(entSid); }   // 走上城镇→进场景
     } else if (ex) {
