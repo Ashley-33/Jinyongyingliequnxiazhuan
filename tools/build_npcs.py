@@ -25,6 +25,17 @@ for s in range(84):
     if evs:
         scenes[str(s)] = evs
 
+# —— 补丁：丐帮心法(#158)的触发事件 ——
+# 十四天书之一「丐帮心法」在 legend 版 d1 里由场景50(阎基居)的阎基事件(脚本27)触发，
+# 本项目这版 d1 缺此事件，导致丐帮心法无法获得。此处补回一个可见的阎基(可对话)：
+# 队中有郭靖(脚本27 开头 op16 判定)时，与阎基对峙 → 打赢(战斗2) → 得丐帮心法。
+YANJI_PIC = 5240
+if B.tile(YANJI_PIC) is None:      # 精灵解不出就换一个能用的人物精灵
+    YANJI_PIC = 6580
+scenes.setdefault('50', []).append(
+    {'i': 5, 'x': 32, 'y': 24, 'pic': YANJI_PIC, 'e1': 27, 'e2': -1, 'e3': -1, 'b': 1})
+used.add(YANJI_PIC)
+
 # 解码用到的每个 pic → smap 瓦片(tile 内部已 //2)
 imgs = {}
 for p in sorted(used):
